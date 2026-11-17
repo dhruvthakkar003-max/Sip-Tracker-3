@@ -1447,8 +1447,8 @@
             }).join('')}</div>
             <p class="text-xs mt-2 ${today.verdict === 'STRONG BUY' || today.verdict === 'BUY' ? 'text-green-400' : 'text-slate-400'}">
               ${today.verdict === 'STRONG BUY' || today.verdict === 'BUY'
-                ? '✓ Today's live candle meets dip-buy conditions — verdict: ' + today.verdict
-                : 'Today's live candle does not fully meet buy conditions — ' + today.verdict}
+                ? ('Today live candle meets dip-buy conditions — verdict: ' + today.verdict)
+                : ('Today live candle does not fully meet buy conditions — ' + today.verdict)}
             </p>`;
         }
 

@@ -1,4 +1,4 @@
-const CACHE = 'smartfund-v8';
+const CACHE = 'smartfund-v9';
 const ASSETS = [
   './',
   './index.html',
@@ -23,22 +23,35 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   const url = e.request.url;
-  // Always network-first for HTML and API so updates show quickly
-  if (url.includes('mfapi.in') || url.includes('proxy.cors.dev') || url.includes('feargreedchart') ||
-      url.endsWith('.html') || url.endsWith('/') || e.request.mode === 'navigate') {
+  if (
+    e.request.mode === 'navigate' ||
+    url.endsWith('.html') ||
+    url.endsWith('/') ||
+    url.includes('mfapi.in') ||
+    url.includes('proxy.cors.dev') ||
+    url.includes('feargreedchart') ||
+    url.includes('yahoo') ||
+    url.includes('finance')
+  ) {
     e.respondWith(
-      fetch(e.request).then(res => {
-        const clone = res.clone();
-        caches.open(CACHE).then(c => c.put(e.request, clone));
-        return res;
-      }).catch(() => caches.match(e.request).then(r => r || caches.match('./index.html')))
+      fetch(e.request)
+        .then(res => {
+          if (res && res.ok && e.request.method === 'GET') {
+            const clone = res.clone();
+            caches.open(CACHE).then(c => c.put(e.request, clone)).catch(() => {});
+          }
+          return res;
+        })
+        .catch(() => caches.match(e.request).then(r => r || caches.match('./index.html')))
     );
     return;
   }
   e.respondWith(
     caches.match(e.request).then(r => r || fetch(e.request).then(res => {
-      const clone = res.clone();
-      caches.open(CACHE).then(c => c.put(e.request, clone));
+      if (res && res.ok) {
+        const clone = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, clone)).catch(() => {});
+      }
       return res;
     }).catch(() => caches.match('./index.html')))
   );
