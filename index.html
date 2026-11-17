@@ -1,0 +1,2255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="description" content="Smart SIP Investment Tracker with dip deployment">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <title>SmartFund SIP</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root { --bg: #0f172a; --card: #1e293b; --accent: #22c55e; --danger: #ef4444; --warn: #f59e0b; }
+    body { background: var(--bg); color: #e2e8f0; font-family: system-ui, -apple-system, sans-serif; }
+    .card { background: var(--card); border-radius: 1rem; }
+    .btn { transition: all 0.15s; }
+    .btn:active { transform: scale(0.97); }
+    .tab-active { border-bottom: 3px solid #22c55e; color: #22c55e; }
+    input, select { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; }
+    input:focus, select:focus { outline: none; border-color: #22c55e; }
+    .progress-bar { height: 6px; border-radius: 3px; background: #334155; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, #22c55e, #16a34a); }
+    .badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 9999px; }
+    .positive { color: #22c55e; }
+    .negative { color: #ef4444; }
+    .modal { backdrop-filter: blur(4px); }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+  </style>
+</head>
+<body class="min-h-screen pb-20">
+  <!-- Header -->
+  <header class="sticky top-0 z-40 bg-slate-900/95 backdrop-blur border-b border-slate-700 px-4 py-3">
+    <div class="flex items-center justify-between max-w-lg mx-auto">
+      <div>
+        <h1 class="text-xl font-bold text-green-400">SmartFund SIP</h1>
+        <p class="text-xs text-slate-400">Dip-deploy · SIP · Insights</p>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="exportData()" class="btn p-2 rounded-lg bg-slate-800 text-slate-300" title="Backup">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+        </button>
+        <button onclick="document.getElementById('importFile').click()" class="btn p-2 rounded-lg bg-slate-800 text-slate-300" title="Restore">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+        </button>
+        <input type="file" id="importFile" accept=".json" class="hidden" onchange="importData(event)">
+      </div>
+    </div>
+  </header>
+
+  <!-- Tabs -->
+  <nav class="sticky top-[57px] z-30 bg-slate-900 border-b border-slate-700">
+    <div class="flex max-w-lg mx-auto text-xs sm:text-sm font-medium overflow-x-auto" style="scrollbar-width:none;-ms-overflow-style:none">
+      <button onclick="switchTab('dashboard')" id="tab-dashboard" class="shrink-0 py-3 px-2.5 sm:px-3 tab-active">Home</button>
+      <button onclick="switchTab('funds')" id="tab-funds" class="shrink-0 py-3 px-2.5 sm:px-3 text-slate-400">Funds</button>
+      <button onclick="switchTab('sip')" id="tab-sip" class="shrink-0 py-3 px-2.5 sm:px-3 text-slate-400">SIP</button>
+      <button onclick="switchTab('deploy')" id="tab-deploy" class="shrink-0 py-3 px-2.5 sm:px-3 text-slate-400">Deploy</button>
+      <button onclick="switchTab('signals')" id="tab-signals" class="shrink-0 py-3 px-2.5 sm:px-3 font-semibold text-green-400">Signals</button>
+      <button onclick="switchTab('history')" id="tab-history" class="shrink-0 py-3 px-2.5 sm:px-3 text-slate-400">History</button>
+      <button onclick="switchTab('insights')" id="tab-insights" class="shrink-0 py-3 px-2.5 sm:px-3 text-slate-400">Insights</button>
+    </div>
+  </nav>
+
+  <main class="max-w-lg mx-auto px-4 py-4 space-y-4">
+    <!-- DASHBOARD -->
+    <section id="panel-dashboard" class="space-y-4">
+      <div class="grid grid-cols-2 gap-3">
+        <div class="card p-4">
+          <p class="text-xs text-slate-400">Total Invested</p>
+          <p class="text-xl font-bold" id="dash-invested">₹0</p>
+        </div>
+        <div class="card p-4">
+          <p class="text-xs text-slate-400">Current Value</p>
+          <p class="text-xl font-bold" id="dash-value">₹0</p>
+        </div>
+        <div class="card p-4">
+          <p class="text-xs text-slate-400">Overall P&L</p>
+          <p class="text-xl font-bold" id="dash-pnl">₹0</p>
+        </div>
+        <div class="card p-4">
+          <p class="text-xs text-slate-400">Available (Regular+Dip)</p>
+          <p class="text-xl font-bold text-cyan-400" id="dash-available">₹0</p>
+        </div>
+        <div class="card p-4 border border-blue-500/30">
+          <p class="text-xs text-slate-400">Regular Fund</p>
+          <p class="text-lg font-bold text-blue-400" id="dash-regular">₹0</p>
+          <p class="text-[10px] text-slate-500">SIP / manual invest</p>
+        </div>
+        <div class="card p-4 border border-amber-500/30">
+          <p class="text-xs text-slate-400">Dip Reserve</p>
+          <p class="text-lg font-bold text-amber-400" id="dash-reserve">₹0</p>
+          <p class="text-[10px] text-slate-500">For buy-on-dip</p>
+        </div>
+      </div>
+
+      <div class="card p-4">
+        <h3 class="font-semibold mb-2 text-sm">Cash actions</h3>
+        <div class="flex flex-wrap gap-2">
+          <button onclick="addToRegular()" class="btn flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm">+ Add to Regular</button>
+          <button onclick="transferRegularToReserve()" class="btn flex-1 bg-amber-600 text-black py-2 rounded-lg text-sm">Regular → Dip</button>
+          <button onclick="monthEndTransfer()" class="btn w-full bg-slate-700 text-slate-200 py-2 rounded-lg text-sm">Month-end: move remaining Regular → Dip</button>
+        </div>
+      </div>
+
+      <div class="card p-4">
+        <div class="flex justify-between items-center mb-2">
+          <h3 class="font-semibold">Nifty 50 Monitor</h3>
+          <button onclick="refreshNifty()" class="text-xs text-green-400 font-medium">↻ Auto Refresh</button>
+        </div>
+        <div class="grid grid-cols-3 gap-2 text-center text-sm">
+          <div>
+            <p class="text-xs text-slate-400">Current</p>
+            <p class="font-bold" id="nifty-current">—</p>
+          </div>
+          <div>
+            <p class="text-xs text-slate-400">Month High</p>
+            <p class="font-bold" id="nifty-high">—</p>
+          </div>
+          <div>
+            <p class="text-xs text-slate-400">From High</p>
+            <p class="font-bold" id="nifty-drop">—</p>
+          </div>
+        </div>
+        <div class="mt-3 flex gap-2">
+          <input type="number" id="nifty-input" placeholder="Enter Nifty price" class="flex-1 rounded-lg px-3 py-2 text-sm">
+          <button onclick="setNiftyManual()" class="btn bg-green-600 text-white px-3 rounded-lg text-sm">Set</button>
+        </div>
+
+        <!-- Custom Live Price Link -->
+        <div class="mt-4 border-t border-slate-700 pt-3">
+          <button onclick="toggleNiftyLink()" class="text-xs text-slate-300 flex items-center gap-1 w-full font-medium">
+            <span id="nifty-link-arrow">▶</span> Paste Link to fetch live price
+          </button>
+          <div id="nifty-link-panel" class="hidden mt-3 space-y-3">
+            <p class="text-xs text-slate-400">
+              1. Paste any JSON API URL below<br>
+              2. Click <b>Verify Source</b> to test & see the price<br>
+              3. If correct → <b>Save & Use</b> → then use Auto Refresh anytime
+            </p>
+
+            <div>
+              <label class="text-xs text-slate-400">Price API Link (URL)</label>
+              <input type="url" id="nifty-url" placeholder="https://your-api.com/nifty or any JSON endpoint" class="w-full rounded-lg px-3 py-2 mt-1 text-sm">
+            </div>
+
+            <div>
+              <label class="text-xs text-slate-400">JSON path to the number (optional)</label>
+              <input type="text" id="nifty-jsonpath" placeholder="e.g. nifty.level  ·  data.price  ·  lastPrice  ·  ltp" class="w-full rounded-lg px-3 py-2 mt-1 text-sm">
+            </div>
+
+            <div class="flex gap-2">
+              <button onclick="verifyNiftySource()" class="btn flex-1 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium">Verify Source</button>
+              <button onclick="saveNiftyLink()" class="btn flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium">Save & Use</button>
+            </div>
+
+            <button onclick="useDefaultNiftyLink()" class="btn w-full bg-slate-800 text-slate-300 py-2 rounded-lg text-xs">Use built-in free source</button>
+
+            <!-- Verification result -->
+            <div id="nifty-verify-box" class="hidden rounded-lg p-3 text-sm border border-slate-600 bg-slate-900/80">
+              <p class="text-xs text-slate-400 mb-1">Verification result</p>
+              <p id="nifty-verify-price" class="text-lg font-bold text-green-400">—</p>
+              <p id="nifty-verify-msg" class="text-xs text-slate-400 mt-1"></p>
+              <pre id="nifty-verify-raw" class="mt-2 text-[10px] text-slate-500 max-h-24 overflow-auto whitespace-pre-wrap break-all"></pre>
+            </div>
+
+            <p class="text-xs" id="nifty-link-status">No custom link saved yet</p>
+          </div>
+        </div>
+
+        <div id="nifty-alerts" class="mt-3 space-y-1 text-sm"></div>
+      </div>
+
+      <div class="card p-4">
+        <h3 class="font-semibold mb-3">Allocation Snapshot</h3>
+        <div id="dash-allocation" class="space-y-2"></div>
+      </div>
+
+      <div class="card p-4">
+        <h3 class="font-semibold mb-3">Recent Activity</h3>
+        <div id="dash-activity" class="space-y-2 text-sm max-h-48 overflow-y-auto"></div>
+      </div>
+    </section>
+
+    <!-- FUNDS -->
+    <section id="panel-funds" class="hidden space-y-4">
+      <div class="flex justify-between items-center gap-2">
+        <h2 class="text-lg font-semibold">Your Funds</h2>
+        <div class="flex gap-2">
+          <button onclick="refreshAllNavs()" class="btn bg-slate-700 text-slate-200 px-3 py-2 rounded-lg text-sm" title="Refresh NAV + Month High for all funds">↻ All NAV+High</button>
+          <button onclick="openAddFund()" class="btn bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium">+ Add Fund</button>
+        </div>
+      </div>
+      <div id="funds-list" class="space-y-3"></div>
+    </section>
+
+    <!-- SIP -->
+    <section id="panel-sip" class="hidden space-y-4">
+      <div class="card p-4">
+        <h3 class="font-semibold mb-3">Monthly SIP Setup</h3>
+        <div class="space-y-3">
+          <div>
+            <label class="text-xs text-slate-400">SIP Amount (₹)</label>
+            <input type="number" id="sip-amount" class="w-full rounded-lg px-3 py-2 mt-1" placeholder="e.g. 10000">
+          </div>
+          <div>
+            <label class="text-xs text-slate-400">SIP Date (day of month)</label>
+            <input type="number" id="sip-day" min="1" max="28" class="w-full rounded-lg px-3 py-2 mt-1" placeholder="5">
+          </div>
+          <button onclick="saveSipConfig()" class="btn w-full bg-green-600 text-white py-2 rounded-lg font-medium">Save SIP Config</button>
+        </div>
+      </div>
+
+      <div class="card p-4">
+        <h3 class="font-semibold mb-2">Execute This Month's SIP</h3>
+        <p class="text-xs text-slate-400 mb-3">Taken from <b>Regular Fund</b>. Unallocated % goes to Dip Reserve. Month-end: move leftover Regular → Dip.</p>
+        <button onclick="executeSip()" class="btn w-full bg-blue-600 text-white py-3 rounded-lg font-medium">Run SIP Now</button>
+      </div>
+
+      <div class="card p-4">
+        <h3 class="font-semibold mb-3">SIP History</h3>
+        <div id="sip-history" class="space-y-2 text-sm max-h-64 overflow-y-auto"></div>
+      </div>
+    </section>
+
+    <!-- DEPLOY -->
+    <section id="panel-deploy" class="hidden space-y-4">
+      <div class="card p-4 border border-amber-500/30">
+        <h3 class="font-semibold text-amber-400 mb-2">Nifty Dip Deployment</h3>
+        <p class="text-xs text-slate-400 mb-3">Deploy from <b>Dip Reserve + Regular</b> when Nifty falls 2.5% / 5% from month high.</p>
+        <p class="text-xs text-slate-500 mb-2" id="deploy-cash-status"></p>
+        <div id="deploy-nifty-status" class="mb-3 text-sm"></div>
+        <div class="flex gap-2 mb-3">
+          <input type="number" id="deploy-amount" placeholder="Amount to deploy (₹)" class="flex-1 rounded-lg px-3 py-2 text-sm">
+          <button onclick="deployFromReserve()" class="btn bg-amber-500 text-black px-4 rounded-lg text-sm font-medium">Deploy</button>
+        </div>
+        <p class="text-xs text-slate-500">You choose how much of the Reserve to deploy and into which funds.</p>
+      </div>
+
+      <div class="card p-4">
+        <h3 class="font-semibold mb-3">Fund-wise Dip Alerts</h3>
+        <p class="text-xs text-slate-400 mb-3">Funds that have dropped X% from their current-month high (set threshold per fund).</p>
+        <div id="fund-dip-list" class="space-y-3"></div>
+      </div>
+
+      <div class="card p-4">
+        <h3 class="font-semibold mb-3">Manual Deploy from Reserve</h3>
+        <div class="space-y-2">
+          <select id="deploy-fund-select" class="w-full rounded-lg px-3 py-2 text-sm"></select>
+          <input type="number" id="deploy-fund-amount" placeholder="Amount (₹)" class="w-full rounded-lg px-3 py-2 text-sm">
+          <button onclick="manualDeployToFund()" class="btn w-full bg-green-600 text-white py-2 rounded-lg">Allocate to Fund</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- SIGNALS – Nifty 1-Day Buy-on-Dip -->
+    <section id="panel-signals" class="hidden space-y-4">
+      <div class="card p-4 border border-green-500/20">
+        <div class="flex justify-between items-center mb-2">
+          <div>
+            <h3 class="font-semibold text-green-400">Nifty 50 · 1-Day Buy on Dip</h3>
+            <p class="text-xs text-slate-400">Technical verdict for daily dip buying</p>
+          </div>
+          <button onclick="refreshSignals()" class="btn bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium">↻ Refresh</button>
+        </div>
+        <p class="text-xs text-slate-500" id="signals-updated">Tap Refresh to analyse</p>
+      </div>
+
+      <!-- Final Verdict -->
+      <div id="signals-verdict" class="card p-5 text-center">
+        <p class="text-xs text-slate-400 mb-1">FINAL VERDICT</p>
+        <p class="text-3xl font-bold text-slate-500" id="verdict-label">—</p>
+        <p class="text-sm text-slate-400 mt-2" id="verdict-sub">Refresh to get today’s signal</p>
+        <p class="text-xs text-slate-500 mt-3" id="verdict-score"></p>
+      </div>
+
+      <!-- Price snapshot -->
+      <div class="card p-4">
+        <h3 class="font-semibold mb-3 text-sm">Price Snapshot</h3>
+        <div class="grid grid-cols-2 gap-3 text-sm" id="signals-price-box">
+          <div><p class="text-xs text-slate-400">Last Close</p><p class="font-bold" id="sig-close">—</p></div>
+          <div><p class="text-xs text-slate-400">Change</p><p class="font-bold" id="sig-change">—</p></div>
+          <div><p class="text-xs text-slate-400">Day High / Low</p><p class="font-bold text-xs" id="sig-hl">—</p></div>
+          <div><p class="text-xs text-slate-400">vs 20-DMA</p><p class="font-bold" id="sig-vs-sma20">—</p></div>
+        </div>
+      </div>
+
+      <!-- Technical Alerts -->
+      <div class="card p-4">
+        <h3 class="font-semibold mb-3 text-sm">Today's Technical Alerts</h3>
+        <div id="signals-alerts" class="space-y-2 text-sm">
+          <p class="text-slate-500">Refresh to load indicators</p>
+        </div>
+      </div>
+
+      <!-- Candle pattern: today vs recent past -->
+      <div class="card p-4">
+        <h3 class="font-semibold mb-1 text-sm">Candle Pattern · Today vs Past</h3>
+        <p class="text-xs text-slate-500 mb-2">Compares today's live daily candle with the last few sessions</p>
+        <div id="signals-pattern" class="space-y-2 text-sm">
+          <p class="text-slate-500">Refresh to analyse candle patterns</p>
+        </div>
+      </div>
+
+      <!-- Historical daily candle triggers -->
+      <div class="card p-4">
+        <h3 class="font-semibold mb-1 text-sm">Daily Candle Triggers</h3>
+        <p class="text-xs text-slate-500 mb-3">Every trading day scored with the same rules. BUY / STRONG BUY days listed below.</p>
+        <div id="signals-history" class="space-y-1.5 max-h-72 overflow-y-auto text-sm">
+          <p class="text-slate-500">Refresh to scan all daily candles</p>
+        </div>
+      </div>
+
+      <!-- Indicator values -->
+      <div class="card p-4">
+        <h3 class="font-semibold mb-3 text-sm">Indicators</h3>
+        <div class="grid grid-cols-2 gap-2 text-sm" id="signals-indicators">
+          <div class="bg-slate-800/60 rounded-lg p-2"><p class="text-xs text-slate-400">RSI (14)</p><p id="sig-rsi" class="font-semibold">—</p></div>
+          <div class="bg-slate-800/60 rounded-lg p-2"><p class="text-xs text-slate-400">SMA 20</p><p id="sig-sma20" class="font-semibold">—</p></div>
+          <div class="bg-slate-800/60 rounded-lg p-2"><p class="text-xs text-slate-400">SMA 50</p><p id="sig-sma50" class="font-semibold">—</p></div>
+          <div class="bg-slate-800/60 rounded-lg p-2"><p class="text-xs text-slate-400">vs Month High</p><p id="sig-vs-high" class="font-semibold">—</p></div>
+          <div class="bg-slate-800/60 rounded-lg p-2"><p class="text-xs text-slate-400">BB Position</p><p id="sig-bb" class="font-semibold">—</p></div>
+          <div class="bg-slate-800/60 rounded-lg p-2"><p class="text-xs text-slate-400">Stoch %K</p><p id="sig-stoch" class="font-semibold">—</p></div>
+        </div>
+      </div>
+
+      <!-- Strategy rules -->
+      <div class="card p-4">
+        <h3 class="font-semibold mb-2 text-sm">Strategy Rules (1-Day Buy on Dip)</h3>
+        <ul class="text-xs text-slate-400 space-y-1.5 list-disc pl-4">
+          <li><b class="text-slate-300">RSI &lt; 35</b> → oversold (strong dip signal)</li>
+          <li><b class="text-slate-300">Price below SMA20</b> → short-term weakness / dip</li>
+          <li><b class="text-slate-300">Near lower Bollinger Band</b> → stretched downside</li>
+          <li><b class="text-slate-300">Stochastic &lt; 25</b> → momentum oversold</li>
+          <li><b class="text-slate-300">≥ 2.5% below recent high</b> → meaningful pullback</li>
+          <li>Score ≥ 4 → <span class="text-green-400">STRONG BUY</span> · 3 → <span class="text-green-300">BUY</span> · 2 → <span class="text-amber-400">WATCH</span> · &lt;2 → <span class="text-slate-400">AVOID</span></li>
+        </ul>
+      </div>
+    </section>
+
+
+    <!-- HISTORY -->
+    <section id="panel-history" class="hidden space-y-4">
+      <div class="flex gap-2 text-sm">
+        <button onclick="setHistoryFilter('all')" id="hf-all" class="btn px-3 py-1.5 rounded-lg bg-green-600 text-white">All</button>
+        <button onclick="setHistoryFilter('deploy')" id="hf-deploy" class="btn px-3 py-1.5 rounded-lg bg-slate-700 text-slate-300">Deploys</button>
+        <button onclick="setHistoryFilter('sip')" id="hf-sip" class="btn px-3 py-1.5 rounded-lg bg-slate-700 text-slate-300">SIP</button>
+        <button onclick="setHistoryFilter('reserve')" id="hf-reserve" class="btn px-3 py-1.5 rounded-lg bg-slate-700 text-slate-300">Reserve</button>
+      </div>
+
+      <div class="card p-4">
+        <div class="flex justify-between items-center mb-3">
+          <h3 class="font-semibold">Transaction Log</h3>
+          <button onclick="openAddTransaction()" class="btn text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg">+ Add</button>
+        </div>
+        <div id="history-tx-list" class="space-y-2 max-h-[50vh] overflow-y-auto text-sm"></div>
+      </div>
+
+      <div class="card p-4">
+        <h3 class="font-semibold mb-3">Monthly SIP History</h3>
+        <div id="history-sip-list" class="space-y-2 max-h-64 overflow-y-auto text-sm"></div>
+      </div>
+    </section>
+
+    <!-- INSIGHTS -->
+    <section id="panel-insights" class="hidden space-y-4">
+      <div class="card p-4">
+        <h3 class="font-semibold mb-3">Portfolio Performance</h3>
+        <canvas id="perfChart" height="200"></canvas>
+      </div>
+      <div class="card p-4">
+        <h3 class="font-semibold mb-3">Fund-wise Returns</h3>
+        <div id="insights-funds" class="space-y-3"></div>
+      </div>
+      <div class="card p-4">
+        <h3 class="font-semibold mb-3">Suggestions</h3>
+        <div id="insights-tips" class="text-sm space-y-2 text-slate-300"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Add / Edit Fund Modal -->
+  <div id="fundModal" class="fixed inset-0 z-50 hidden modal bg-black/60 flex items-end sm:items-center justify-center p-4">
+    <div class="card w-full max-w-md p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-center">
+        <h3 class="text-lg font-semibold" id="modal-title">Add Fund</h3>
+        <button onclick="closeFundModal()" class="text-slate-400 text-2xl leading-none">&times;</button>
+      </div>
+      <div>
+        <label class="text-xs text-slate-400">Search Fund (name or scheme code)</label>
+        <div class="flex gap-2 mt-1">
+          <input type="text" id="fund-search" placeholder="e.g. Parag Parikh Flexi Cap" class="flex-1 rounded-lg px-3 py-2 text-sm">
+          <button onclick="searchFunds()" class="btn bg-slate-700 px-3 rounded-lg text-sm">Search</button>
+        </div>
+        <div id="search-results" class="mt-2 max-h-40 overflow-y-auto space-y-1 text-sm"></div>
+      </div>
+      <div>
+        <label class="text-xs text-slate-400">Fund Name</label>
+        <input type="text" id="fund-name" class="w-full rounded-lg px-3 py-2 mt-1 text-sm">
+      </div>
+      <div>
+        <label class="text-xs text-slate-400">Scheme Code (AMFI NAV)</label>
+        <input type="text" id="fund-code" class="w-full rounded-lg px-3 py-2 mt-1 text-sm" placeholder="e.g. 148927 for MAFANG">
+      </div>
+      <div>
+        <label class="text-xs text-slate-400">NSE Ticker (for live market price – ETFs)</label>
+        <input type="text" id="fund-ticker" class="w-full rounded-lg px-3 py-2 mt-1 text-sm" placeholder="e.g. MAFANG for exchange price">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs text-slate-400">Allocation %</label>
+          <input type="number" id="fund-alloc" min="0" max="100" step="0.5" class="w-full rounded-lg px-3 py-2 mt-1 text-sm" placeholder="30">
+        </div>
+        <div>
+          <label class="text-xs text-slate-400">Dip Threshold %</label>
+          <input type="number" id="fund-dip" min="1" max="20" step="0.5" class="w-full rounded-lg px-3 py-2 mt-1 text-sm" placeholder="5">
+        </div>
+      </div>
+      <div>
+        <label class="text-xs text-slate-400">Units held (optional)</label>
+        <input type="number" id="fund-units" step="0.001" class="w-full rounded-lg px-3 py-2 mt-1 text-sm" placeholder="0">
+      </div>
+      <div>
+        <label class="text-xs text-slate-400">Avg Buy NAV (optional)</label>
+        <input type="number" id="fund-avg" step="0.01" class="w-full rounded-lg px-3 py-2 mt-1 text-sm" placeholder="0">
+      </div>
+      <button onclick="saveFund()" class="btn w-full bg-green-600 text-white py-3 rounded-lg font-medium">Save Fund</button>
+    </div>
+  </div>
+
+
+  <!-- Edit / Add Transaction Modal -->
+  <div id="txModal" class="fixed inset-0 z-50 hidden modal bg-black/60 flex items-end sm:items-center justify-center p-4">
+    <div class="card w-full max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-center">
+        <h3 class="text-lg font-semibold" id="tx-modal-title">Edit Transaction</h3>
+        <button onclick="closeTxModal()" class="text-slate-400 text-2xl leading-none">&times;</button>
+      </div>
+      <input type="hidden" id="tx-edit-id">
+      <div>
+        <label class="text-xs text-slate-400">Type</label>
+        <select id="tx-type" class="w-full rounded-lg px-3 py-2 mt-1 text-sm">
+          <option value="sip">SIP</option>
+          <option value="deploy">Deploy (from Reserve)</option>
+          <option value="reserve">To Reserve</option>
+          <option value="manual">Manual / Other</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-xs text-slate-400">Amount (₹)</label>
+        <input type="number" id="tx-amount" class="w-full rounded-lg px-3 py-2 mt-1 text-sm">
+      </div>
+      <div>
+        <label class="text-xs text-slate-400">Fund (optional)</label>
+        <select id="tx-fund" class="w-full rounded-lg px-3 py-2 mt-1 text-sm">
+          <option value="">— None —</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-xs text-slate-400">Date</label>
+        <input type="datetime-local" id="tx-date" class="w-full rounded-lg px-3 py-2 mt-1 text-sm">
+      </div>
+      <div>
+        <label class="text-xs text-slate-400">Note</label>
+        <input type="text" id="tx-note" class="w-full rounded-lg px-3 py-2 mt-1 text-sm" placeholder="Optional note">
+      </div>
+      <button onclick="saveTransaction()" class="btn w-full bg-green-600 text-white py-3 rounded-lg font-medium">Save</button>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed bottom-24 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-4 py-2 rounded-lg text-sm shadow-lg hidden z-50"></div>
+
+  <script>
+    // ========== DATA MODEL ==========
+    const STORAGE_KEY = 'smartfund_v1';
+    let state = {
+      funds: [],          // {id, name, code, alloc%, dipThreshold%, units, avgNav, monthHigh, lastNav, history:[]}
+      regular: 0,       // Regular fund – SIP / manual invest pool
+      reserve: 0,       // Dip reserve – for buy-on-dip deployments
+      sip: { amount: 0, day: 5 },
+      nifty: {
+        current: 0,
+        monthHigh: 0,
+        lastUpdated: null,
+        customUrl: '',        // user-provided live price API
+        jsonPath: 'nifty.level' // simple dot path to extract number
+      },
+      transactions: [],   // {date, type, amount, fundId?, note}
+      sipHistory: [],
+      activity: []
+    };
+    let editingFundId = null;
+    let perfChart = null;
+
+    // ========== PERSISTENCE ==========
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) state = JSON.parse(raw);
+      } catch (e) { console.warn(e); }
+      // Migrate older saves
+      if (!state.nifty) state.nifty = { current: 0, monthHigh: 0, lastUpdated: null };
+      if (state.nifty.customUrl === undefined) state.nifty.customUrl = '';
+      if (state.nifty.jsonPath === undefined) state.nifty.jsonPath = 'nifty.level';
+      if (!state.transactions) state.transactions = [];
+      if (!state.sipHistory) state.sipHistory = [];
+      if (!state.activity) state.activity = [];
+      if (state.regular === undefined) state.regular = 0;
+      if (state.reserve === undefined) state.reserve = 0;
+      // Ensure month high reset logic can run
+      checkMonthReset();
+    }
+    function save() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+    function checkMonthReset() {
+      const now = new Date();
+      const key = `${now.getFullYear()}-${now.getMonth()}`;
+      if (state._monthKey !== key) {
+        state._monthKey = key;
+        // Reset month highs for new month
+        state.funds.forEach(f => { f.monthHigh = f.lastNav || 0; });
+        if (state.nifty.current) state.nifty.monthHigh = state.nifty.current;
+        save();
+      }
+    }
+
+    // ========== UI HELPERS ==========
+    function toast(msg, ms = 2500) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.remove('hidden');
+      setTimeout(() => t.classList.add('hidden'), ms);
+    }
+    function fmt(n) {
+      return '₹' + (Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+    }
+    function fmtPct(n) {
+      const v = Number(n) || 0;
+      return (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+    }
+    function switchTab(name) {
+      ['dashboard','funds','sip','deploy','signals','history','insights'].forEach(t => {
+        document.getElementById('panel-' + t).classList.toggle('hidden', t !== name);
+        const tab = document.getElementById('tab-' + t);
+        if (tab) {
+          tab.classList.toggle('tab-active', t === name);
+          tab.classList.toggle('text-slate-400', t !== name);
+        }
+      });
+      if (name === 'insights') renderInsights();
+      if (name === 'deploy') renderDeploy();
+      if (name === 'dashboard') renderDashboard();
+      if (name === 'funds') renderFunds();
+      if (name === 'sip') renderSip();
+      if (name === 'signals') renderSignals();
+      if (name === 'history') renderHistory();
+    }
+
+    // Shared fetch helper (must be above searchFunds / fetchNav)
+    const MF_PROXIES = [
+      (code) => `https://api.mfapi.in/mf/${code}`,
+      (code) => `https://corsproxy.io/?https://api.mfapi.in/mf/${code}`,
+      (code) => `https://api.allorigins.win/raw?url=${encodeURIComponent('https://api.mfapi.in/mf/' + code)}`,
+      (code) => `https://cors.bridged.cc/https://api.mfapi.in/mf/${code}`
+    ];
+    async function fetchJsonWithFallback(urls) {
+      let lastErr;
+      for (const url of urls) {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 9000);
+          const res = await fetch(url, { signal: controller.signal, mode: 'cors' });
+          clearTimeout(timer);
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          let data = await res.json();
+          if (data && typeof data.contents === 'string') {
+            data = JSON.parse(data.contents);
+          }
+          return data;
+        } catch (e) {
+          lastErr = e;
+          console.warn('Fetch failed:', url, e.message);
+        }
+      }
+      throw lastErr || new Error('All sources failed');
+    }
+
+    // ========== FUND CRUD ==========
+    function openAddFund() {
+      editingFundId = null;
+      document.getElementById('modal-title').textContent = 'Add Fund';
+      ['fund-name','fund-code','fund-ticker','fund-alloc','fund-dip','fund-units','fund-avg','fund-search'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+      document.getElementById('search-results').innerHTML = '';
+      document.getElementById('fundModal').classList.remove('hidden');
+    }
+    function editFund(id) {
+      const f = state.funds.find(x => x.id === id);
+      if (!f) return;
+      editingFundId = id;
+      document.getElementById('modal-title').textContent = 'Edit Fund';
+      document.getElementById('fund-name').value = f.name;
+      document.getElementById('fund-code').value = f.code || '';
+      const tickEl = document.getElementById('fund-ticker');
+      if (tickEl) tickEl.value = f.ticker || '';
+      document.getElementById('fund-alloc').value = f.alloc;
+      document.getElementById('fund-dip').value = f.dipThreshold || 5;
+      document.getElementById('fund-units').value = f.units || '';
+      document.getElementById('fund-avg').value = f.avgNav || '';
+      document.getElementById('search-results').innerHTML = '';
+      document.getElementById('fundModal').classList.remove('hidden');
+    }
+    function closeFundModal() {
+      document.getElementById('fundModal').classList.add('hidden');
+    }
+    async function searchFunds() {
+      const q = document.getElementById('fund-search').value.trim();
+      if (!q || q.length < 2) return toast('Type at least 2 characters');
+      const box = document.getElementById('search-results');
+      box.innerHTML = '<p class="text-slate-400">Searching…</p>';
+      try {
+        if (!window._mfList) {
+          const urls = [
+            'https://api.mfapi.in/mf',
+            'https://corsproxy.io/?https://api.mfapi.in/mf',
+            'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://api.mfapi.in/mf')
+          ];
+          const data = await fetchJsonWithFallback(urls);
+          window._mfList = Array.isArray(data) ? data : (data.contents ? JSON.parse(data.contents) : []);
+        }
+        const lower = q.toLowerCase();
+        const hits = window._mfList.filter(s => 
+          (s.schemeName && s.schemeName.toLowerCase().includes(lower)) ||
+          String(s.schemeCode).includes(q)
+        ).slice(0, 15);
+        if (!hits.length) {
+          box.innerHTML = '<p class="text-slate-400">No matches. Enter name & code manually.</p>';
+          return;
+        }
+        box.innerHTML = hits.map(s => {
+          const safeName = (s.schemeName || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+          return `<button onclick="selectSearchResult('${s.schemeCode}','${safeName}')" 
+            class="block w-full text-left px-2 py-1.5 rounded hover:bg-slate-700 truncate">
+            <span class="text-green-400 text-xs">${s.schemeCode}</span> ${s.schemeName}
+          </button>`;
+        }).join('');
+      } catch (e) {
+        console.warn(e);
+        box.innerHTML = '<p class="text-red-400">Search failed (CORS / network). Enter name & scheme code manually.</p>';
+      }
+    }
+    function selectSearchResult(code, name) {
+      document.getElementById('fund-code').value = code;
+      document.getElementById('fund-name').value = name;
+      document.getElementById('search-results').innerHTML = '';
+    }
+    function saveFund() {
+      const name = document.getElementById('fund-name').value.trim();
+      const code = document.getElementById('fund-code').value.trim();
+      const ticker = (document.getElementById('fund-ticker')?.value || '').trim().toUpperCase();
+      const alloc = parseFloat(document.getElementById('fund-alloc').value) || 0;
+      const dip = parseFloat(document.getElementById('fund-dip').value) || 5;
+      const units = parseFloat(document.getElementById('fund-units').value) || 0;
+      const avg = parseFloat(document.getElementById('fund-avg').value) || 0;
+      if (!name) return toast('Name required');
+      if (editingFundId) {
+        const f = state.funds.find(x => x.id === editingFundId);
+        Object.assign(f, { name, code, ticker, alloc, dipThreshold: dip, units, avgNav: avg });
+      } else {
+        state.funds.push({
+          id: 'f' + Date.now(),
+          name, code, ticker, alloc, dipThreshold: dip,
+          units, avgNav: avg,
+          lastNav: avg || 0,
+          monthHigh: avg || 0,
+          history: []
+        });
+      }
+      // Normalize allocations if needed (soft warning only)
+      const totalAlloc = state.funds.reduce((s, f) => s + (f.alloc || 0), 0);
+      if (totalAlloc > 100.5) toast('Warning: total allocation > 100%');
+      save();
+      closeFundModal();
+      renderFunds();
+      renderDashboard();
+      toast('Fund saved');
+      if (ticker) fetchMarketPrice(ticker, true);
+      else if (code) fetchNav(code, true);
+    }
+    function deleteFund(id) {
+      if (!confirm('Delete this fund?')) return;
+      state.funds = state.funds.filter(f => f.id !== id);
+      save();
+      renderFunds();
+      renderDashboard();
+      toast('Fund deleted');
+    }
+
+    // ========== NAV FETCH (with CORS fallbacks) ==========
+    // Parse AMFI-style date "DD-MM-YYYY" → Date
+    function parseNavDate(str) {
+      if (!str) return null;
+      const p = String(str).split('-');
+      if (p.length === 3) return new Date(+p[2], +p[1] - 1, +p[0]);
+      const d = new Date(str);
+      return isNaN(d) ? null : d;
+    }
+
+    // Highest NAV in the current calendar month from history array
+    function computeMonthHigh(history, fallbackNav) {
+      const now = new Date();
+      const y = now.getFullYear(), m = now.getMonth();
+      let high = 0;
+      (history || []).forEach(h => {
+        const d = parseNavDate(h.date);
+        if (d && d.getFullYear() === y && d.getMonth() === m) {
+          if (h.nav > high) high = h.nav;
+        }
+      });
+      if (!high && fallbackNav) high = fallbackNav;
+      return high;
+    }
+
+    async function fetchNav(code, silent = false) {
+      if (!code) return;
+      try {
+        const urls = MF_PROXIES.map(fn => fn(code));
+        const data = await fetchJsonWithFallback(urls);
+        if (!data.data || !data.data.length) throw new Error('No NAV data');
+        const latest = data.data[0];
+        const nav = parseFloat(latest.nav);
+        if (!nav || isNaN(nav)) throw new Error('Invalid NAV');
+        const fund = state.funds.find(f => f.code === String(code));
+        if (fund) {
+          fund.lastNav = nav;
+          fund.history = data.data.slice(0, 60).map(d => ({ date: d.date, nav: parseFloat(d.nav) }));
+          fund.lastNavDate = latest.date;
+          // True month high from current-month history
+          const mh = computeMonthHigh(fund.history, nav);
+          fund.monthHigh = mh;
+          save();
+          if (!silent) toast(`${fund.name}: NAV ₹${nav.toFixed(2)} · Month High ₹${mh.toFixed(2)}`);
+          renderFunds();
+          renderDashboard();
+          renderDeploy();
+        }
+        return nav;
+      } catch (e) {
+        console.warn('NAV error', e);
+        if (!silent) {
+          toast('NAV auto-fetch failed. Use “Set” buttons or open via http:// server');
+        }
+      }
+    }
+
+
+    async function fetchMarketPrice(ticker, silent = false) {
+      if (!ticker) return;
+      try {
+        const url = 'https://proxy.cors.dev/https://query1.finance.yahoo.com/v8/finance/chart/' +
+          encodeURIComponent(ticker.includes('.') ? ticker : ticker + '.NS') +
+          '?interval=1d&range=2mo';
+        const res = await fetch(url, { mode: 'cors' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const json = await res.json();
+        const result = json?.chart?.result?.[0];
+        if (!result) throw new Error('No data');
+        const meta = result.meta || {};
+        const q = result.indicators?.quote?.[0];
+        const closes = (q?.close || []).filter(x => x != null);
+        if (!closes.length && !meta.regularMarketPrice) throw new Error('No price');
+        const price = meta.regularMarketPrice || closes[closes.length - 1];
+        const fund = state.funds.find(f =>
+          (f.ticker && f.ticker.toUpperCase() === ticker.toUpperCase().replace('.NS','')) ||
+          (f.ticker && f.ticker.toUpperCase() === ticker.toUpperCase())
+        );
+        if (fund) {
+          fund.lastNav = price;
+          // month high from recent closes
+          const now = new Date();
+          const y = now.getFullYear(), m = now.getMonth();
+          let monthHigh = price;
+          const ts = result.timestamp || [];
+          if (q?.high && ts.length) {
+            for (let i = 0; i < ts.length; i++) {
+              const d = new Date(ts[i] * 1000);
+              if (d.getFullYear() === y && d.getMonth() === m && q.high[i] != null) {
+                if (q.high[i] > monthHigh) monthHigh = q.high[i];
+              }
+            }
+          }
+          fund.monthHigh = Math.max(fund.monthHigh || 0, monthHigh, price);
+          fund.history = closes.slice(-30).map((c, i) => ({ date: String(i), nav: c }));
+          fund.lastNavDate = new Date().toLocaleDateString('en-IN');
+          save();
+          if (!silent) toast(`${fund.name}: Market ₹${price.toFixed(2)}`);
+          renderFunds();
+          renderDashboard();
+          renderDeploy();
+        }
+        return price;
+      } catch (e) {
+        console.warn('Market price error', e);
+        if (!silent) toast('Market price fetch failed for ' + ticker);
+      }
+    }
+
+    async function refreshAllNavs() {
+      if (!state.funds.some(f => f.code || f.ticker)) return toast('No funds with code or ticker');
+      toast('Refreshing prices…');
+      let ok = 0;
+      for (const f of state.funds) {
+        if (f.ticker) {
+          const n = await fetchMarketPrice(f.ticker, true);
+          if (n) ok++;
+        } else if (f.code) {
+          const n = await fetchNav(f.code, true);
+          if (n) ok++;
+        }
+      }
+      toast(ok ? `Updated ${ok} fund(s)` : 'Could not reach price API. Enter manually.');
+      renderAll();
+    }
+
+    // Refresh only month high for one fund (uses already stored history or re-fetches)
+    async function refreshMonthHigh(fundId) {
+      const f = state.funds.find(x => x.id === fundId);
+      if (!f) return;
+      if (f.ticker) {
+        toast('Updating month high…');
+        await fetchMarketPrice(f.ticker, true);
+        toast(`${f.name}: Month High ₹${(f.monthHigh || 0).toFixed(2)}`);
+      } else if (f.code) {
+        toast('Updating month high…');
+        await fetchNav(f.code, true);
+        toast(`${f.name}: Month High ₹${(f.monthHigh || 0).toFixed(2)}`);
+      } else if (f.history && f.history.length) {
+        f.monthHigh = computeMonthHigh(f.history, f.lastNav);
+        save();
+        renderFunds();
+        renderDeploy();
+        toast(`Month High ₹${f.monthHigh.toFixed(2)}`);
+      } else {
+        setManualMonthHigh(fundId);
+      }
+    }
+
+    function setManualNav(fundId) {
+      const f = state.funds.find(x => x.id === fundId);
+      if (!f) return;
+      const val = prompt(`Enter latest NAV for\n${f.name}`, f.lastNav || '');
+      if (val === null) return;
+      const nav = parseFloat(val);
+      if (!nav || isNaN(nav)) return toast('Invalid number');
+      f.lastNav = nav;
+      if (!f.monthHigh || nav > f.monthHigh) f.monthHigh = nav;
+      f.lastNavDate = new Date().toLocaleDateString('en-IN');
+      save();
+      renderFunds();
+      renderDashboard();
+      renderDeploy();
+      toast(`NAV set to ₹${nav.toFixed(2)}`);
+    }
+
+    function setManualMonthHigh(fundId) {
+      const f = state.funds.find(x => x.id === fundId);
+      if (!f) return;
+      const val = prompt(`Enter Month High NAV for\n${f.name}\n(highest NAV this month)`, f.monthHigh || f.lastNav || '');
+      if (val === null) return;
+      const mh = parseFloat(val);
+      if (!mh || isNaN(mh)) return toast('Invalid number');
+      f.monthHigh = mh;
+      save();
+      renderFunds();
+      renderDashboard();
+      renderDeploy();
+      toast(`Month High set to ₹${mh.toFixed(2)}`);
+    }
+
+    function setThreshold(fundId) {
+      const f = state.funds.find(x => x.id === fundId);
+      if (!f) return;
+      const val = prompt(`Dip threshold % for\n${f.name}\n(alert when price falls this % from month high)`, f.dipThreshold || 5);
+      if (val === null) return;
+      const t = parseFloat(val);
+      if (!t || isNaN(t) || t <= 0) return toast('Enter a positive number');
+      f.dipThreshold = t;
+      save();
+      renderFunds();
+      renderDeploy();
+      toast(`Threshold set to ${t}%`);
+    }
+
+    // ========== NIFTY ==========
+    let _lastVerifiedPrice = null; // temporary after Verify
+
+    function toggleNiftyLink() {
+      const panel = document.getElementById('nifty-link-panel');
+      const arrow = document.getElementById('nifty-link-arrow');
+      const open = !panel.classList.contains('hidden');
+      panel.classList.toggle('hidden', open);
+      arrow.textContent = open ? '▶' : '▼';
+      if (!open) {
+        document.getElementById('nifty-url').value = state.nifty.customUrl || '';
+        document.getElementById('nifty-jsonpath').value = state.nifty.jsonPath || '';
+        updateNiftyLinkStatus();
+        document.getElementById('nifty-verify-box').classList.add('hidden');
+      }
+    }
+
+    function updateNiftyLinkStatus() {
+      const el = document.getElementById('nifty-link-status');
+      if (!el) return;
+      if (state.nifty.customUrl) {
+        el.innerHTML = `<span class="text-green-400">● Saved source:</span> <span class="text-slate-300 break-all">${state.nifty.customUrl}</span>`;
+      } else {
+        el.innerHTML = '<span class="text-slate-500">No custom link saved — will use built-in free source</span>';
+      }
+    }
+
+    // Extract number from nested JSON using simple dot path
+    function getByPath(obj, path) {
+      if (!path || path.trim() === '') return undefined;
+      return path.split('.').reduce((acc, key) => {
+        if (acc == null) return undefined;
+        if (/^\d+$/.test(key)) return acc[parseInt(key, 10)];
+        return acc[key];
+      }, obj);
+    }
+
+    // Try common field names if path fails
+    function extractPrice(data, preferredPath) {
+      if (preferredPath) {
+        const v = parseFloat(getByPath(data, preferredPath));
+        if (v && !isNaN(v) && v > 100) return v; // Nifty is always > 1000
+      }
+      const candidates = [
+        data?.nifty?.level, data?.nifty_level, data?.level,
+        data?.data?.price, data?.price, data?.last, data?.ltp, data?.LTP,
+        data?.quote?.lastPrice, data?.lastPrice, data?.close, data?.Close,
+        data?.data?.lastPrice, data?.data?.ltp, data?.result?.price,
+        data?.indices?.[0]?.last, data?.data?.indices?.[0]?.last
+      ];
+      for (const c of candidates) {
+        const n = parseFloat(c);
+        if (n && !isNaN(n) && n > 1000 && n < 100000) return n;
+      }
+      // last resort: find first number that looks like Nifty
+      const str = JSON.stringify(data);
+      const match = str.match(/"(?:last|ltp|price|level|close)"\s*:\s*([0-9]{4,6}\.?[0-9]*)/i);
+      if (match) {
+        const n = parseFloat(match[1]);
+        if (n > 1000) return n;
+      }
+      return null;
+    }
+
+    async function fetchFromUrl(url) {
+      const urls = [
+        url,
+        'https://corsproxy.io/?' + encodeURIComponent(url),
+        'https://api.allorigins.win/raw?url=' + encodeURIComponent(url)
+      ];
+      return fetchJsonWithFallback(urls);
+    }
+
+    async function verifyNiftySource() {
+      const url = document.getElementById('nifty-url').value.trim();
+      const path = document.getElementById('nifty-jsonpath').value.trim();
+      if (!url) return toast('Paste a link first');
+
+      const box = document.getElementById('nifty-verify-box');
+      const priceEl = document.getElementById('nifty-verify-price');
+      const msgEl = document.getElementById('nifty-verify-msg');
+      const rawEl = document.getElementById('nifty-verify-raw');
+      box.classList.remove('hidden');
+      priceEl.textContent = '…';
+      priceEl.className = 'text-lg font-bold text-slate-400';
+      msgEl.textContent = 'Fetching…';
+      rawEl.textContent = '';
+
+      try {
+        const data = await fetchFromUrl(url);
+        const price = extractPrice(data, path);
+        rawEl.textContent = JSON.stringify(data, null, 2).slice(0, 800);
+
+        if (price) {
+          _lastVerifiedPrice = price;
+          priceEl.textContent = '₹ ' + price.toLocaleString('en-IN');
+          priceEl.className = 'text-lg font-bold text-green-400';
+          msgEl.innerHTML = '✓ Looks good. Click <b>Save & Use</b> then Auto Refresh will use this source.';
+          // auto-fill the input so user can also Set manually
+          document.getElementById('nifty-input').value = price;
+        } else {
+          _lastVerifiedPrice = null;
+          priceEl.textContent = 'Not found';
+          priceEl.className = 'text-lg font-bold text-amber-400';
+          msgEl.textContent = 'Could not find a Nifty-like number. Try a different JSON path (see raw data below).';
+        }
+      } catch (e) {
+        _lastVerifiedPrice = null;
+        priceEl.textContent = 'Failed';
+        priceEl.className = 'text-lg font-bold text-red-400';
+        msgEl.textContent = (e.message || 'Network / CORS error').slice(0, 120);
+        rawEl.textContent = '';
+      }
+    }
+
+    function saveNiftyLink() {
+      const url = document.getElementById('nifty-url').value.trim();
+      const path = document.getElementById('nifty-jsonpath').value.trim();
+
+      if (!url) {
+        state.nifty.customUrl = '';
+        state.nifty.jsonPath = '';
+        save();
+        updateNiftyLinkStatus();
+        toast('Custom link cleared — will use built-in source');
+        return;
+      }
+      try { new URL(url); } catch { return toast('Invalid URL'); }
+
+      state.nifty.customUrl = url;
+      state.nifty.jsonPath = path;
+      save();
+      updateNiftyLinkStatus();
+
+      // If we just verified a price, apply it immediately
+      if (_lastVerifiedPrice) {
+        state.nifty.current = _lastVerifiedPrice;
+        if (!state.nifty.monthHigh || _lastVerifiedPrice > state.nifty.monthHigh) {
+          state.nifty.monthHigh = _lastVerifiedPrice;
+        }
+        state.nifty.lastUpdated = new Date().toISOString();
+        document.getElementById('nifty-input').value = _lastVerifiedPrice;
+        save();
+        renderDashboard();
+        renderDeploy();
+        toast('Source saved & price applied: ' + _lastVerifiedPrice.toLocaleString('en-IN'));
+      } else {
+        toast('Source saved. Click Auto Refresh to fetch price.');
+      }
+    }
+
+    function useDefaultNiftyLink() {
+      state.nifty.customUrl = 'https://nifty.feargreedchart.com/api/?action=nifty';
+      state.nifty.jsonPath = 'nifty.level';
+      document.getElementById('nifty-url').value = state.nifty.customUrl;
+      document.getElementById('nifty-jsonpath').value = state.nifty.jsonPath;
+      save();
+      updateNiftyLinkStatus();
+      toast('Built-in free source selected. Click Verify or Auto Refresh.');
+    }
+
+    function setNiftyManual() {
+      const v = parseFloat(document.getElementById('nifty-input').value);
+      if (!v) return toast('Enter a valid price');
+      state.nifty.current = v;
+      if (!state.nifty.monthHigh || v > state.nifty.monthHigh) state.nifty.monthHigh = v;
+      state.nifty.lastUpdated = new Date().toISOString();
+      save();
+      renderDashboard();
+      renderDeploy();
+      toast('Nifty updated');
+    }
+
+    async function refreshNifty() {
+      toast('Fetching live price…');
+      try {
+        let data, v;
+
+        if (state.nifty.customUrl) {
+          data = await fetchFromUrl(state.nifty.customUrl);
+          v = extractPrice(data, state.nifty.jsonPath);
+          if (!v) throw new Error('Could not extract price from your link. Re-verify & check JSON path.');
+        } else {
+          // Built-in free source
+          const res = await fetch('https://nifty.feargreedchart.com/api/?action=nifty', { mode: 'cors' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          data = await res.json();
+          v = extractPrice(data, 'nifty.level');
+          if (!v) throw new Error('Built-in source returned no price');
+        }
+
+        state.nifty.current = v;
+        if (!state.nifty.monthHigh || v > state.nifty.monthHigh) state.nifty.monthHigh = v;
+        state.nifty.lastUpdated = new Date().toISOString();
+        save();
+        document.getElementById('nifty-input').value = v;
+        renderDashboard();
+        renderDeploy();
+        toast(`Live price → ${v.toLocaleString('en-IN')}`);
+      } catch (e) {
+        console.warn(e);
+        toast('Fetch failed: ' + (e.message || 'error').slice(0, 70));
+      }
+    }
+
+    function niftyDropPct() {
+      if (!state.nifty.monthHigh) return 0;
+      return ((state.nifty.current - state.nifty.monthHigh) / state.nifty.monthHigh) * 100;
+    }
+
+    // ========== NIFTY 1-DAY BUY-ON-DIP SIGNALS ==========
+    let lastSignals = null;
+
+    function sma(arr, period) {
+      if (arr.length < period) return null;
+      const slice = arr.slice(-period);
+      return slice.reduce((a, b) => a + b, 0) / period;
+    }
+
+    function rsi(closes, period = 14) {
+      if (closes.length < period + 1) return null;
+      let gains = 0, losses = 0;
+      for (let i = closes.length - period; i < closes.length; i++) {
+        const diff = closes[i] - closes[i - 1];
+        if (diff >= 0) gains += diff;
+        else losses -= diff;
+      }
+      if (losses === 0) return 100;
+      const rs = (gains / period) / (losses / period);
+      return 100 - (100 / (1 + rs));
+    }
+
+    function bollinger(closes, period = 20, mult = 2) {
+      if (closes.length < period) return null;
+      const slice = closes.slice(-period);
+      const mean = slice.reduce((a, b) => a + b, 0) / period;
+      const variance = slice.reduce((a, b) => a + (b - mean) ** 2, 0) / period;
+      const std = Math.sqrt(variance);
+      return { mid: mean, upper: mean + mult * std, lower: mean - mult * std };
+    }
+
+    function stochastic(highs, lows, closes, period = 14) {
+      if (closes.length < period) return null;
+      const h = Math.max(...highs.slice(-period));
+      const l = Math.min(...lows.slice(-period));
+      if (h === l) return 50;
+      return ((closes[closes.length - 1] - l) / (h - l)) * 100;
+    }
+
+
+    /** Candle shape for one bar */
+    function candleShape(o, h, l, c) {
+      const body = Math.abs(c - o);
+      const range = Math.max(h - l, 1e-9);
+      const upper = h - Math.max(o, c);
+      const lower = Math.min(o, c) - l;
+      const bodyPct = body / range;
+      const lowerPct = lower / range;
+      const upperPct = upper / range;
+      const bull = c >= o;
+      let pattern = bull ? 'Bullish' : 'Bearish';
+      if (bodyPct < 0.12) pattern = 'Doji';
+      else if (lowerPct >= 0.55 && bodyPct <= 0.35 && upperPct <= 0.2) pattern = bull ? 'Hammer' : 'Hanging Man';
+      else if (upperPct >= 0.55 && bodyPct <= 0.35 && lowerPct <= 0.2) pattern = bull ? 'Inverted Hammer' : 'Shooting Star';
+      else if (bodyPct >= 0.65) pattern = bull ? 'Strong Bull Marubozu' : 'Strong Bear Marubozu';
+      else if (bull && lowerPct > upperPct * 1.5) pattern = 'Bullish with lower wick';
+      else if (!bull && upperPct > lowerPct * 1.5) pattern = 'Bearish with upper wick';
+      return { pattern, body, range, bodyPct, lowerPct, upperPct, bull, o, h, l, c };
+    }
+
+    /** Compare today candle with previous few days */
+    function compareCandlePatterns(opens, highs, lows, closes, idx) {
+      if (idx < 2) return null;
+      const today = candleShape(opens[idx], highs[idx], lows[idx], closes[idx]);
+      const yday = candleShape(opens[idx - 1], highs[idx - 1], lows[idx - 1], closes[idx - 1]);
+      const d2 = candleShape(opens[idx - 2], highs[idx - 2], lows[idx - 2], closes[idx - 2]);
+
+      const notes = [];
+      let patternScore = 0;
+
+      // Engulfing
+      if (today.bull && !yday.bull && today.c >= yday.o && today.o <= yday.c) {
+        notes.push({ type: 'buy', text: 'Bullish engulfing vs yesterday' });
+        patternScore += 1.5;
+      } else if (!today.bull && yday.bull && today.o >= yday.c && today.c <= yday.o) {
+        notes.push({ type: 'warn', text: 'Bearish engulfing vs yesterday' });
+        patternScore -= 0.5;
+      }
+
+      // Hammer / rejection at lows after decline
+      if (today.pattern === 'Hammer' || (today.lowerPct >= 0.5 && today.bull)) {
+        notes.push({ type: 'buy', text: `Today: ${today.pattern} — buyers rejected lows` });
+        patternScore += 1.2;
+      }
+      if (today.pattern === 'Doji') {
+        notes.push({ type: 'ok', text: 'Today: Doji — indecision, wait for confirmation' });
+        patternScore += 0.3;
+      }
+      if (today.pattern.includes('Shooting Star') || (today.upperPct >= 0.55 && !today.bull)) {
+        notes.push({ type: 'warn', text: `Today: ${today.pattern} — supply at highs` });
+        patternScore -= 0.5;
+      }
+
+      // Consecutive down closes then recovery attempt
+      const down1 = closes[idx - 1] < closes[idx - 2];
+      const down2 = idx >= 3 && closes[idx - 2] < closes[idx - 3];
+      if (down1 && down2 && today.bull) {
+        notes.push({ type: 'buy', text: 'Green candle after 2+ red sessions — possible dip recovery' });
+        patternScore += 1;
+      } else if (down1 && down2 && !today.bull) {
+        notes.push({ type: 'ok', text: 'Still weak after consecutive down days' });
+      }
+
+      // Higher low vs yesterday
+      if (lows[idx] > lows[idx - 1] && today.bull) {
+        notes.push({ type: 'buy', text: 'Higher low + green candle vs yesterday' });
+        patternScore += 0.8;
+      } else if (lows[idx] < lows[idx - 1] && highs[idx] < highs[idx - 1]) {
+        notes.push({ type: 'warn', text: 'Lower high & lower low — trend still down' });
+      }
+
+      // Close location in range (live candle strength)
+      const closePos = (closes[idx] - lows[idx]) / Math.max(highs[idx] - lows[idx], 1e-9);
+      if (closePos >= 0.7 && today.bull) {
+        notes.push({ type: 'buy', text: 'Close near day high — strong buyers on today\'s candle' });
+        patternScore += 0.7;
+      } else if (closePos <= 0.3 && !today.bull) {
+        notes.push({ type: 'warn', text: 'Close near day low — sellers in control today' });
+        patternScore -= 0.3;
+      }
+
+      if (!notes.length) notes.push({ type: 'ok', text: `Today: ${today.pattern} · Yesterday: ${yday.pattern}` });
+
+      return {
+        today, yday, d2, notes, patternScore,
+        summary: `${today.pattern} today vs ${yday.pattern} yesterday`
+      };
+    }
+
+    /** Score one day using only data available up to that index (no look-ahead) */
+    function scoreDay(closes, highs, lows, opens, idx) {
+      if (idx < 20) return null; // need enough history
+      const c = closes.slice(0, idx + 1);
+      const h = highs.slice(0, idx + 1);
+      const l = lows.slice(0, idx + 1);
+      const o = opens.slice(0, idx + 1);
+      const last = c[c.length - 1];
+      const prev = c.length > 1 ? c[c.length - 2] : last;
+      const changePct = prev ? ((last - prev) / prev) * 100 : 0;
+      const patterns = compareCandlePatterns(o, h, l, c, c.length - 1);
+
+      const sma20 = sma(c, 20);
+      const sma50 = c.length >= 50 ? sma(c, 50) : null;
+      const rsi14 = rsi(c, 14);
+      const bb = bollinger(c, 20, 2);
+      const stoch = stochastic(h, l, c, 14);
+      const lookback = Math.min(22, c.length);
+      const recentHigh = Math.max(...c.slice(-lookback));
+      const vsHighPct = ((last - recentHigh) / recentHigh) * 100;
+
+      let score = 0;
+      const alerts = [];
+
+      if (rsi14 != null) {
+        if (rsi14 < 30) { score += 2; alerts.push({ type: 'buy', text: `RSI ${rsi14.toFixed(1)} strongly oversold` }); }
+        else if (rsi14 < 35) { score += 1; alerts.push({ type: 'buy', text: `RSI ${rsi14.toFixed(1)} oversold` }); }
+        else if (rsi14 > 65) { alerts.push({ type: 'warn', text: `RSI ${rsi14.toFixed(1)} elevated` }); }
+        else { alerts.push({ type: 'ok', text: `RSI ${rsi14.toFixed(1)} neutral` }); }
+      }
+
+      if (sma20) {
+        const vs20 = ((last - sma20) / sma20) * 100;
+        if (vs20 < -1.5) { score += 1; alerts.push({ type: 'buy', text: `${vs20.toFixed(2)}% below SMA20` }); }
+        else if (vs20 < 0) { score += 0.5; alerts.push({ type: 'ok', text: `Slightly below SMA20` }); }
+        else { alerts.push({ type: 'ok', text: `Above SMA20` }); }
+      }
+
+      if (bb) {
+        const range = bb.upper - bb.lower;
+        const pos = range > 0 ? (last - bb.lower) / range : 0.5;
+        if (pos < 0.15) { score += 1.5; alerts.push({ type: 'buy', text: `Near lower Bollinger Band` }); }
+        else if (pos < 0.35) { score += 0.5; alerts.push({ type: 'ok', text: `Lower half of BB` }); }
+        else if (pos > 0.85) { alerts.push({ type: 'warn', text: `Near upper BB` }); }
+        else { alerts.push({ type: 'ok', text: `Mid BB range` }); }
+      }
+
+      if (stoch != null) {
+        if (stoch < 20) { score += 1.5; alerts.push({ type: 'buy', text: `Stoch ${stoch.toFixed(1)} oversold` }); }
+        else if (stoch < 25) { score += 1; alerts.push({ type: 'buy', text: `Stoch ${stoch.toFixed(1)} weak` }); }
+        else if (stoch > 80) { alerts.push({ type: 'warn', text: `Stoch ${stoch.toFixed(1)} overbought` }); }
+        else { alerts.push({ type: 'ok', text: `Stoch ${stoch.toFixed(1)} neutral` }); }
+      }
+
+      if (vsHighPct <= -5) { score += 1.5; alerts.push({ type: 'buy', text: `${vsHighPct.toFixed(2)}% below ~1M high` }); }
+      else if (vsHighPct <= -2.5) { score += 1; alerts.push({ type: 'buy', text: `${vsHighPct.toFixed(2)}% below recent high` }); }
+      else if (vsHighPct <= -1) { score += 0.5; alerts.push({ type: 'ok', text: `Mild pullback ${vsHighPct.toFixed(2)}%` }); }
+      else { alerts.push({ type: 'ok', text: `Near highs (${vsHighPct.toFixed(2)}%)` }); }
+
+      if (changePct <= -1) { score += 0.5; alerts.push({ type: 'buy', text: `Down day ${changePct.toFixed(2)}%` }); }
+      else if (changePct >= 1.2) { alerts.push({ type: 'warn', text: `Strong up day +${changePct.toFixed(2)}%` }); }
+
+      // Candle pattern vs past sessions
+      if (patterns) {
+        score += Math.max(-1, Math.min(2.5, patterns.patternScore));
+        patterns.notes.forEach(n => alerts.push(n));
+      }
+
+      let verdict;
+      if (score >= 4) verdict = 'STRONG BUY';
+      else if (score >= 3) verdict = 'BUY';
+      else if (score >= 2) verdict = 'WATCH';
+      else verdict = 'AVOID';
+
+      return {
+        score, verdict, alerts, last, changePct, sma20, sma50, rsi14, bb, stoch,
+        vsHighPct, recentHigh, dayHigh: h[h.length - 1], dayLow: l[l.length - 1],
+        patterns, open: o[o.length - 1]
+      };
+    }
+
+    async function refreshSignals() {
+      toast('Scanning all daily candles…');
+      const updatedEl = document.getElementById('signals-updated');
+      updatedEl.textContent = 'Loading…';
+
+      try {
+        // ~6 months of daily bars so every candle can be scored
+        const url = 'https://proxy.cors.dev/https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI?interval=1d&range=6mo';
+        const res = await fetch(url, { mode: 'cors' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const json = await res.json();
+        const result = json?.chart?.result?.[0];
+        if (!result) throw new Error('No chart data');
+
+        const q = result.indicators?.quote?.[0];
+        const ts = result.timestamp || [];
+        if (!q || !q.close) throw new Error('Incomplete OHLC');
+
+        const closes = [], highs = [], lows = [], opens = [], dates = [];
+        for (let i = 0; i < q.close.length; i++) {
+          if (q.close[i] != null) {
+            closes.push(q.close[i]);
+            highs.push(q.high[i] ?? q.close[i]);
+            lows.push(q.low[i] ?? q.close[i]);
+            opens.push(q.open[i] ?? q.close[i]);
+            dates.push(ts[i] ? new Date(ts[i] * 1000) : null);
+          }
+        }
+        if (closes.length < 30) throw new Error('Not enough history');
+
+        // Score EVERY daily candle using that day's live OHLC + past only (no look-ahead)
+        const dayResults = [];
+        for (let i = 20; i < closes.length; i++) {
+          const s = scoreDay(closes, highs, lows, opens, i);
+          if (s) {
+            s.date = dates[i];
+            s.idx = i;
+            dayResults.push(s);
+          }
+        }
+
+        const today = dayResults[dayResults.length - 1];
+        if (!today) throw new Error('Could not score latest day');
+
+        // Sync Nifty state from latest close
+        state.nifty.current = today.last;
+        if (!state.nifty.monthHigh || today.last > state.nifty.monthHigh) {
+          state.nifty.monthHigh = Math.max(state.nifty.monthHigh || 0, today.recentHigh);
+        }
+        state.nifty.lastUpdated = new Date().toISOString();
+        save();
+
+        // Verdict labels
+        let sub, color;
+        if (today.verdict === 'STRONG BUY') {
+          sub = 'Multiple oversold signals on today\'s candle. Favourable for 1-day dip buying.';
+          color = 'text-green-400';
+        } else if (today.verdict === 'BUY') {
+          sub = 'Enough dip signals on today\'s candle to consider a buy tranche.';
+          color = 'text-green-300';
+        } else if (today.verdict === 'WATCH') {
+          sub = 'Some weakness on today\'s candle, but not a clear multi-signal dip yet.';
+          color = 'text-amber-400';
+        } else {
+          sub = 'No meaningful dip setup on today\'s candle. Wait for deeper pullback.';
+          color = 'text-slate-400';
+        }
+
+        lastSignals = { ...today, dayResults, at: new Date().toISOString() };
+
+        // Render today
+        document.getElementById('verdict-label').textContent = today.verdict;
+        document.getElementById('verdict-label').className = 'text-3xl font-bold ' + color;
+        document.getElementById('verdict-sub').textContent = sub;
+        document.getElementById('verdict-score').textContent =
+          `Score: ${today.score.toFixed(1)} / 8+ · scanned ${dayResults.length} daily candles`;
+
+        document.getElementById('sig-close').textContent = today.last.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+        const chEl = document.getElementById('sig-change');
+        chEl.textContent = (today.changePct >= 0 ? '+' : '') + today.changePct.toFixed(2) + '%';
+        chEl.className = 'font-bold ' + (today.changePct >= 0 ? 'text-green-400' : 'text-red-400');
+        document.getElementById('sig-hl').textContent = `${today.dayHigh.toFixed(0)} / ${today.dayLow.toFixed(0)}`;
+        document.getElementById('sig-vs-sma20').textContent = today.sma20
+          ? (((today.last - today.sma20) / today.sma20) * 100).toFixed(2) + '%'
+          : '—';
+
+        document.getElementById('sig-rsi').textContent = today.rsi14 != null ? today.rsi14.toFixed(1) : '—';
+        document.getElementById('sig-rsi').className = 'font-semibold ' + (today.rsi14 < 35 ? 'text-green-400' : today.rsi14 > 65 ? 'text-amber-400' : '');
+        document.getElementById('sig-sma20').textContent = today.sma20 ? today.sma20.toFixed(1) : '—';
+        document.getElementById('sig-sma50').textContent = today.sma50 ? today.sma50.toFixed(1) : '—';
+        document.getElementById('sig-vs-high').textContent = today.vsHighPct.toFixed(2) + '%';
+        document.getElementById('sig-vs-high').className = 'font-semibold ' + (today.vsHighPct <= -2.5 ? 'text-green-400' : '');
+        if (today.bb) {
+          const pos = ((today.last - today.bb.lower) / (today.bb.upper - today.bb.lower)) * 100;
+          document.getElementById('sig-bb').textContent = pos.toFixed(0) + '% from lower';
+        } else document.getElementById('sig-bb').textContent = '—';
+        document.getElementById('sig-stoch').textContent = today.stoch != null ? today.stoch.toFixed(1) : '—';
+        document.getElementById('sig-stoch').className = 'font-semibold ' + (today.stoch < 25 ? 'text-green-400' : today.stoch > 80 ? 'text-amber-400' : '');
+
+        document.getElementById('signals-alerts').innerHTML = today.alerts.map(a => {
+          const icon = a.type === 'buy' ? '🟢' : a.type === 'warn' ? '🟡' : '⚪';
+          const cls = a.type === 'buy' ? 'text-green-300' : a.type === 'warn' ? 'text-amber-300' : 'text-slate-400';
+          return `<div class="flex gap-2 ${cls}"><span>${icon}</span><span>${a.text}</span></div>`;
+        }).join('');
+
+        // Pattern comparison panel
+        const patBox = document.getElementById('signals-pattern');
+        if (patBox && today.patterns) {
+          const pt = today.patterns;
+          const t = pt.today, y = pt.yday;
+          const fmtC = (x) => x.toFixed(1);
+          patBox.innerHTML = `
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div class="bg-slate-800/70 rounded-lg p-2">
+                <p class="text-slate-400">Today (live candle)</p>
+                <p class="font-semibold text-green-300">${t.pattern}</p>
+                <p class="text-slate-500">O ${fmtC(t.o)} · H ${fmtC(t.h)} · L ${fmtC(t.l)} · C ${fmtC(t.c)}</p>
+              </div>
+              <div class="bg-slate-800/70 rounded-lg p-2">
+                <p class="text-slate-400">Yesterday</p>
+                <p class="font-semibold text-slate-300">${y.pattern}</p>
+                <p class="text-slate-500">O ${fmtC(y.o)} · H ${fmtC(y.h)} · L ${fmtC(y.l)} · C ${fmtC(y.c)}</p>
+              </div>
+            </div>
+            <p class="text-xs text-slate-400 mt-2">${pt.summary} · pattern score ${pt.patternScore >= 0 ? '+' : ''}${pt.patternScore.toFixed(1)}</p>
+            <div class="mt-2 space-y-1">${pt.notes.map(n => {
+              const icon = n.type === 'buy' ? '🟢' : n.type === 'warn' ? '🟡' : '⚪';
+              const cls = n.type === 'buy' ? 'text-green-300' : n.type === 'warn' ? 'text-amber-300' : 'text-slate-400';
+              return `<div class="flex gap-2 text-xs ${cls}"><span>${icon}</span><span>${n.text}</span></div>`;
+            }).join('')}</div>
+            <p class="text-xs mt-2 ${today.verdict === 'STRONG BUY' || today.verdict === 'BUY' ? 'text-green-400' : 'text-slate-400'}">
+              ${today.verdict === 'STRONG BUY' || today.verdict === 'BUY'
+                ? '✓ Today's live candle meets dip-buy conditions — verdict: ' + today.verdict
+                : 'Today's live candle does not fully meet buy conditions — ' + today.verdict}
+            </p>`;
+        }
+
+        // Historical triggers: BUY or STRONG BUY only, newest first
+        const triggers = dayResults.filter(d => d.verdict === 'BUY' || d.verdict === 'STRONG BUY').reverse();
+        const histBox = document.getElementById('signals-history');
+        if (histBox) {
+          if (!triggers.length) {
+            histBox.innerHTML = '<p class="text-slate-500">No BUY / STRONG BUY triggers in this period</p>';
+          } else {
+            histBox.innerHTML = triggers.map(d => {
+              const ds = d.date ? d.date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+              const isToday = d.idx === closes.length - 1;
+              const vc = d.verdict === 'STRONG BUY' ? 'text-green-400' : 'text-green-300';
+              return `<div class="flex justify-between items-center border-b border-slate-700/80 py-1.5 ${isToday ? 'bg-green-900/20 rounded px-1' : ''}">
+                <div>
+                  <span class="text-slate-300">${ds}</span>
+                  ${isToday ? '<span class="text-[10px] text-green-400 ml-1">TODAY</span>' : ''}
+                  <p class="text-xs text-slate-500">Close ${d.last.toFixed(0)} · RSI ${d.rsi14 != null ? d.rsi14.toFixed(0) : '—'} · vsHigh ${d.vsHighPct.toFixed(1)}%</p>
+                </div>
+                <div class="text-right">
+                  <p class="font-semibold ${vc}">${d.verdict}</p>
+                  <p class="text-xs text-slate-500">Score ${d.score.toFixed(1)}</p>
+                </div>
+              </div>`;
+            }).join('');
+          }
+        }
+
+        updatedEl.textContent = `Updated ${new Date().toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} · ${dayResults.length} days scanned · ${triggers.length} buy triggers`;
+        toast(`Today: ${today.verdict} · ${triggers.length} buy days in history`);
+        renderDashboard();
+      } catch (e) {
+        console.warn(e);
+        updatedEl.textContent = 'Fetch failed';
+        document.getElementById('verdict-label').textContent = 'ERROR';
+        document.getElementById('verdict-label').className = 'text-3xl font-bold text-red-400';
+        document.getElementById('verdict-sub').textContent = (e.message || 'Could not load data') + ' — try again';
+        toast('Signals fetch failed: ' + (e.message || 'network').slice(0, 50));
+      }
+    }
+
+    function renderSignals() {
+      // keeps last refresh result on screen
+    }
+
+    // ========== CASH: REGULAR + DIP RESERVE ==========
+    function totalAvailable() {
+      return (state.regular || 0) + (state.reserve || 0);
+    }
+
+    function addToRegular() {
+      const val = prompt('Add amount to Regular Fund (₹)', '');
+      if (val === null) return;
+      const amt = parseFloat(val);
+      if (!amt || amt <= 0) return toast('Invalid amount');
+      state.regular = (state.regular || 0) + amt;
+      state.transactions.unshift({
+        id: 'tx' + Date.now(),
+        date: new Date().toISOString(),
+        type: 'manual',
+        amount: amt,
+        note: 'Added to Regular Fund'
+      });
+      state.activity.unshift({ date: new Date().toISOString(), text: `+₹${amt.toLocaleString('en-IN')} → Regular Fund` });
+      save();
+      renderDashboard();
+      renderHistory();
+      toast(`Regular Fund: ${fmt(state.regular)}`);
+    }
+
+    function transferRegularToReserve() {
+      const max = state.regular || 0;
+      if (max <= 0) return toast('Regular Fund is empty');
+      const val = prompt(`Transfer from Regular → Dip Reserve\nAvailable in Regular: ₹${max.toLocaleString('en-IN')}`, String(max));
+      if (val === null) return;
+      const amt = parseFloat(val);
+      if (!amt || amt <= 0) return toast('Invalid amount');
+      if (amt > max + 0.01) return toast('Not enough in Regular Fund');
+      state.regular -= amt;
+      state.reserve = (state.reserve || 0) + amt;
+      state.transactions.unshift({
+        id: 'tx' + Date.now(),
+        date: new Date().toISOString(),
+        type: 'reserve',
+        amount: amt,
+        note: 'Transferred Regular → Dip Reserve'
+      });
+      state.activity.unshift({ date: new Date().toISOString(), text: `₹${amt.toLocaleString('en-IN')} Regular → Dip Reserve` });
+      save();
+      renderDashboard();
+      renderHistory();
+      toast(`Moved ${fmt(amt)} to Dip Reserve`);
+    }
+
+    function monthEndTransfer() {
+      const rem = state.regular || 0;
+      if (rem <= 0) return toast('No remaining balance in Regular Fund');
+      if (!confirm(`Move remaining Regular Fund ${fmt(rem)} to Dip Reserve?`)) return;
+      state.reserve = (state.reserve || 0) + rem;
+      state.regular = 0;
+      state.transactions.unshift({
+        id: 'tx' + Date.now(),
+        date: new Date().toISOString(),
+        type: 'reserve',
+        amount: rem,
+        note: 'Month-end auto: remaining Regular → Dip Reserve'
+      });
+      state.activity.unshift({ date: new Date().toISOString(), text: `Month-end: ₹${rem.toLocaleString('en-IN')} → Dip Reserve` });
+      save();
+      renderDashboard();
+      renderHistory();
+      toast('Month-end transfer done');
+    }
+
+    // ========== SIP ==========
+    function saveSipConfig() {
+      state.sip.amount = parseFloat(document.getElementById('sip-amount').value) || 0;
+      state.sip.day = parseInt(document.getElementById('sip-day').value) || 5;
+      save();
+      toast('SIP config saved');
+    }
+    function executeSip() {
+      const amt = state.sip.amount;
+      if (!amt || amt <= 0) return toast('Set SIP amount first');
+      if (!state.funds.length) return toast('Add at least one fund');
+      const totalAlloc = state.funds.reduce((s, f) => s + (f.alloc || 0), 0);
+      if (totalAlloc <= 0) return toast('Set allocation % on funds');
+
+      // Prefer taking SIP from Regular Fund; if short, still allow (user may top up)
+      if ((state.regular || 0) < amt - 0.01) {
+        const need = amt - (state.regular || 0);
+        if (!confirm(`Regular Fund has only ${fmt(state.regular)}. SIP needs ${fmt(amt)} (short ${fmt(need)}). Continue anyway?`)) return;
+      }
+
+      let allocated = 0;
+      const details = [];
+      state.funds.forEach(f => {
+        const share = (f.alloc / totalAlloc) * amt;
+        if (share < 1) return;
+        const nav = f.lastNav || f.avgNav || 1;
+        const units = share / nav;
+        f.units = (f.units || 0) + units;
+        const prevCost = (f.avgNav || 0) * ((f.units || 0) - units);
+        f.avgNav = (prevCost + share) / f.units;
+        allocated += share;
+        details.push({ name: f.name, amount: share, units });
+        state.transactions.push({
+          id: 'tx' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+          date: new Date().toISOString(),
+          type: 'sip',
+          amount: share,
+          fundId: f.id,
+          note: `SIP units ${units.toFixed(3)} @ ₹${nav.toFixed(2)}`
+        });
+      });
+      // Deduct from Regular (not more than available)
+      const fromRegular = Math.min(state.regular || 0, amt);
+      state.regular = Math.max(0, (state.regular || 0) - fromRegular);
+      // Unallocated portion of SIP amount → Dip Reserve
+      const remaining = amt - allocated;
+      if (remaining > 0.5) {
+        state.reserve = (state.reserve || 0) + remaining;
+        state.transactions.push({
+          id: 'tx' + Date.now() + '_res',
+          date: new Date().toISOString(),
+          type: 'reserve',
+          amount: remaining,
+          note: 'SIP unallocated remainder → Dip Reserve'
+        });
+      }
+      state.sipHistory.unshift({
+        id: 'sip' + Date.now(),
+        date: new Date().toISOString(),
+        amount: amt,
+        allocated,
+        toReserve: remaining,
+        details
+      });
+      state.activity.unshift({
+        date: new Date().toISOString(),
+        text: `SIP ₹${amt.toLocaleString('en-IN')} · from Regular · ₹${remaining.toFixed(0)} → Dip Reserve`
+      });
+      save();
+      renderAll();
+      toast(`SIP done. Regular left: ${fmt(state.regular)}`);
+    }
+
+    // ========== DEPLOY ==========
+    function deployFromReserve() {
+      const amt = parseFloat(document.getElementById('deploy-amount').value);
+      if (!amt || amt <= 0) return toast('Enter amount');
+      const avail = totalAvailable();
+      if (amt > avail + 0.01) return toast(`Insufficient cash. Available: ${fmt(avail)} (Regular+Dip)`);
+      toast(`Ready to deploy ₹${amt.toLocaleString('en-IN')}. Use “Allocate to Fund” below.`);
+      document.getElementById('deploy-fund-amount').value = amt;
+    }
+    function manualDeployToFund() {
+      const fundId = document.getElementById('deploy-fund-select').value;
+      const amt = parseFloat(document.getElementById('deploy-fund-amount').value);
+      if (!fundId || !amt || amt <= 0) return toast('Select fund & amount');
+      const avail = totalAvailable();
+      if (amt > avail + 0.01) return toast(`Insufficient cash. Available: ${fmt(avail)}`);
+      const f = state.funds.find(x => x.id === fundId);
+      if (!f) return;
+      const nav = f.lastNav || f.avgNav || 1;
+      const units = amt / nav;
+      const prevCost = (f.avgNav || 0) * (f.units || 0);
+      f.units = (f.units || 0) + units;
+      f.avgNav = (prevCost + amt) / f.units;
+      // Draw from Dip Reserve first, then Regular
+      let left = amt;
+      const fromDip = Math.min(state.reserve || 0, left);
+      state.reserve = (state.reserve || 0) - fromDip;
+      left -= fromDip;
+      if (left > 0) {
+        state.regular = Math.max(0, (state.regular || 0) - left);
+      }
+      state.transactions.push({
+        id: 'tx' + Date.now() + '_dep',
+        date: new Date().toISOString(),
+        type: 'deploy',
+        amount: amt,
+        fundId: f.id,
+        note: `Deployed (Dip ₹${fromDip.toFixed(0)} + Regular ₹${(amt-fromDip).toFixed(0)}) @ ₹${nav.toFixed(2)}`
+      });
+      state.activity.unshift({
+        date: new Date().toISOString(),
+        text: `Deployed ₹${amt.toLocaleString('en-IN')} → ${f.name}`
+      });
+      save();
+      renderAll();
+      toast(`Deployed ₹${amt.toLocaleString('en-IN')} to ${f.name}`);
+      document.getElementById('deploy-fund-amount').value = '';
+    }
+
+    // ========== RENDERERS ==========
+    function renderDashboard() {
+      let invested = 0, value = 0;
+      state.funds.forEach(f => {
+        const cost = (f.units || 0) * (f.avgNav || 0);
+        const cur = (f.units || 0) * (f.lastNav || f.avgNav || 0);
+        invested += cost;
+        value += cur;
+      });
+      const pnl = value - invested;
+      document.getElementById('dash-invested').textContent = fmt(invested);
+      document.getElementById('dash-value').textContent = fmt(value);
+      const pnlEl = document.getElementById('dash-pnl');
+      pnlEl.textContent = fmt(pnl) + ' (' + fmtPct(invested ? (pnl / invested) * 100 : 0) + ')';
+      pnlEl.className = 'text-xl font-bold ' + (pnl >= 0 ? 'positive' : 'negative');
+      document.getElementById('dash-reserve').textContent = fmt(state.reserve);
+      const regEl = document.getElementById('dash-regular');
+      if (regEl) regEl.textContent = fmt(state.regular);
+      const avEl = document.getElementById('dash-available');
+      if (avEl) avEl.textContent = fmt(totalAvailable());
+
+      // Nifty
+      document.getElementById('nifty-current').textContent = state.nifty.current ? state.nifty.current.toLocaleString('en-IN') : '—';
+      document.getElementById('nifty-high').textContent = state.nifty.monthHigh ? state.nifty.monthHigh.toLocaleString('en-IN') : '—';
+      const drop = niftyDropPct();
+      const dropEl = document.getElementById('nifty-drop');
+      dropEl.textContent = state.nifty.monthHigh ? drop.toFixed(2) + '%' : '—';
+      dropEl.className = 'font-bold ' + (drop <= -2.5 ? 'negative' : drop <= -1 ? 'text-amber-400' : 'positive');
+      if (typeof updateNiftyLinkStatus === 'function') updateNiftyLinkStatus();
+
+      const alerts = document.getElementById('nifty-alerts');
+      alerts.innerHTML = '';
+      if (drop <= -5) {
+        alerts.innerHTML = `<div class="bg-red-900/40 text-red-300 px-3 py-2 rounded-lg">🚨 Nifty is ${drop.toFixed(2)}% from month high → Consider deploying Reserve (5% rule)</div>`;
+      } else if (drop <= -2.5) {
+        alerts.innerHTML = `<div class="bg-amber-900/40 text-amber-300 px-3 py-2 rounded-lg">⚠️ Nifty is ${drop.toFixed(2)}% from month high → 2.5% trigger active</div>`;
+      }
+
+      // Allocation
+      const allocBox = document.getElementById('dash-allocation');
+      const totalVal = value || 1;
+      allocBox.innerHTML = state.funds.map(f => {
+        const cur = (f.units || 0) * (f.lastNav || f.avgNav || 0);
+        const pct = (cur / totalVal) * 100;
+        return `<div>
+          <div class="flex justify-between text-sm mb-1">
+            <span class="truncate">${f.name}</span>
+            <span>${pct.toFixed(1)}% · ${fmt(cur)}</span>
+          </div>
+          <div class="progress-bar"><div class="progress-fill" style="width:${Math.min(pct,100)}%"></div></div>
+        </div>`;
+      }).join('') || '<p class="text-slate-500 text-sm">No funds yet</p>';
+
+      // Activity
+      const act = document.getElementById('dash-activity');
+      act.innerHTML = (state.activity || []).slice(0, 10).map(a => {
+        const d = new Date(a.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+        return `<div class="flex gap-2"><span class="text-slate-500">${d}</span><span>${a.text}</span></div>`;
+      }).join('') || '<p class="text-slate-500">No activity yet</p>';
+    }
+
+    function renderFunds() {
+      const box = document.getElementById('funds-list');
+      if (!state.funds.length) {
+        box.innerHTML = '<p class="text-center text-slate-500 py-8">No funds added yet.<br>Tap “+ Add Fund”</p>';
+        return;
+      }
+      box.innerHTML = state.funds.map(f => {
+        const cost = (f.units || 0) * (f.avgNav || 0);
+        const cur = (f.units || 0) * (f.lastNav || f.avgNav || 0);
+        const pnl = cur - cost;
+        const pnlPct = cost ? (pnl / cost) * 100 : 0;
+        const thr = f.dipThreshold || 5;
+        const dropFromHigh = f.monthHigh && f.lastNav
+          ? ((f.lastNav - f.monthHigh) / f.monthHigh) * 100
+          : 0;
+        const isDip = dropFromHigh <= -thr;
+        const alertAmt = isDip && totalAvailable() > 0
+          ? Math.min(totalAvailable(), (f.alloc / 100) * (state.sip.amount || totalAvailable()))
+          : 0;
+
+        return `
+        <div class="card p-4 ${isDip ? 'border-2 border-amber-500/60' : ''}">
+          <div class="flex justify-between items-start gap-2">
+            <div class="flex-1 min-w-0">
+              <p class="font-medium truncate">${f.name}</p>
+              <p class="text-xs text-slate-400">${f.ticker ? 'Ticker: '+f.ticker : 'Code: '+(f.code||'—')} · Alloc: <b class="text-slate-300">${f.alloc}%</b></p>
+            </div>
+            <div class="flex gap-1 flex-wrap justify-end">
+              <button onclick="${f.ticker ? `fetchMarketPrice('${f.ticker}')` : `fetchNav('${f.code || ''}')`}" class="btn text-xs bg-slate-700 px-2 py-1 rounded" title="Fetch live price">↻ Price</button>
+              <button onclick="refreshMonthHigh('${f.id}')" class="btn text-xs bg-slate-700 px-2 py-1 rounded" title="Refresh Month High">↻ High</button>
+              <button onclick="setThreshold('${f.id}')" class="btn text-xs bg-slate-700 px-2 py-1 rounded" title="Set dip threshold %">Thr%</button>
+              <button onclick="editFund('${f.id}')" class="btn text-xs bg-slate-700 px-2 py-1 rounded">Edit</button>
+              <button onclick="deleteFund('${f.id}')" class="btn text-xs bg-red-900/50 text-red-300 px-2 py-1 rounded">Del</button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-4 gap-2 mt-3 text-center text-sm">
+            <div>
+              <p class="text-xs text-slate-400">NAV</p>
+              <p class="font-semibold">₹${(f.lastNav || 0).toFixed(2)}</p>
+              <button onclick="setManualNav('${f.id}')" class="text-[10px] text-slate-500 underline">set</button>
+            </div>
+            <div>
+              <p class="text-xs text-slate-400">Month High</p>
+              <p class="font-semibold">₹${(f.monthHigh || 0).toFixed(2)}</p>
+              <button onclick="setManualMonthHigh('${f.id}')" class="text-[10px] text-slate-500 underline">set</button>
+            </div>
+            <div>
+              <p class="text-xs text-slate-400">Threshold</p>
+              <p class="font-semibold text-amber-400">−${thr}%</p>
+              <button onclick="setThreshold('${f.id}')" class="text-[10px] text-slate-500 underline">edit</button>
+            </div>
+            <div>
+              <p class="text-xs text-slate-400">vs High</p>
+              <p class="font-semibold ${isDip ? 'text-amber-400' : (dropFromHigh < 0 ? 'text-red-400' : 'text-green-400')}">${dropFromHigh.toFixed(2)}%</p>
+            </div>
+          </div>
+
+          <div class="flex justify-between mt-2 text-sm">
+            <span class="${pnl >= 0 ? 'positive' : 'negative'}">${fmt(pnl)} (${fmtPct(pnlPct)})</span>
+            <span class="text-slate-400">Units ${(f.units || 0).toFixed(3)} · ${fmt(cur)}</span>
+          </div>
+
+          ${isDip ? `
+          <div class="mt-3 p-2.5 rounded-lg bg-amber-900/40 border border-amber-500/40 text-sm">
+            <p class="font-medium text-amber-300">⚡ DIP ALERT — below −${thr}% threshold</p>
+            <p class="text-xs text-slate-300 mt-1">
+              Current is ${Math.abs(dropFromHigh).toFixed(2)}% under month high.
+              ${totalAvailable() > 0
+                ? `Consider deploying from available cash (₹${totalAvailable().toLocaleString('en-IN')}). Suggested (~${f.alloc}%): <b>₹${Math.round(alertAmt).toLocaleString('en-IN')}</b>`
+                : 'Add to Regular / Dip Reserve, then deploy from Deploy tab.'}
+            </p>
+            <button onclick="switchTab('deploy')" class="mt-2 text-xs bg-amber-500 text-black px-3 py-1 rounded font-medium">Go to Deploy →</button>
+          </div>` : ''}
+        </div>`;
+      }).join('');
+    }
+
+    function renderSip() {
+      document.getElementById('sip-amount').value = state.sip.amount || '';
+      document.getElementById('sip-day').value = state.sip.day || 5;
+      const box = document.getElementById('sip-history');
+      box.innerHTML = (state.sipHistory || []).map(h => {
+        const d = new Date(h.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+        return `<div class="border-b border-slate-700 pb-2">
+          <div class="flex justify-between"><span>${d}</span><span class="font-medium">${fmt(h.amount)}</span></div>
+          <p class="text-xs text-slate-400">Allocated ${fmt(h.allocated)} · Reserve ${fmt(h.toReserve)}</p>
+        </div>`;
+      }).join('') || '<p class="text-slate-500">No SIP runs yet</p>';
+    }
+
+    function renderDeploy() {
+      const cashEl = document.getElementById('deploy-cash-status');
+      if (cashEl) {
+        cashEl.innerHTML = `Available: <b class="text-cyan-400">${fmt(totalAvailable())}</b> = Regular ${fmt(state.regular)} + Dip ${fmt(state.reserve)}`;
+      }
+      const drop = niftyDropPct();
+      const status = document.getElementById('deploy-nifty-status');
+      if (!state.nifty.monthHigh) {
+        status.innerHTML = '<p class="text-slate-400">Set Nifty price on Dashboard first.</p>';
+      } else if (drop <= -5) {
+        status.innerHTML = `<p class="text-red-400 font-medium">🔴 5% rule triggered (${drop.toFixed(2)}%). Deploy Reserve recommended.</p>`;
+      } else if (drop <= -2.5) {
+        status.innerHTML = `<p class="text-amber-400 font-medium">🟡 2.5% rule triggered (${drop.toFixed(2)}%). Consider deploying.</p>`;
+      } else {
+        status.innerHTML = `<p class="text-green-400">Nifty drop ${drop.toFixed(2)}% — no trigger yet.</p>`;
+      }
+
+      // Fund dips + allocation alert
+      const list = document.getElementById('fund-dip-list');
+      list.innerHTML = state.funds.map(f => {
+        const dropF = f.monthHigh && f.lastNav ? ((f.lastNav - f.monthHigh) / f.monthHigh) * 100 : 0;
+        const thr = f.dipThreshold || 5;
+        const hit = dropF <= -thr;
+        const suggest = hit && totalAvailable() > 0
+          ? Math.round(Math.min(totalAvailable(), (f.alloc / 100) * (state.sip.amount || totalAvailable())))
+          : 0;
+        return `<div class="p-2.5 rounded-lg ${hit ? 'bg-amber-900/30 border border-amber-500/30' : 'bg-slate-800/50'}">
+          <div class="flex justify-between items-center">
+            <div class="min-w-0">
+              <p class="text-sm truncate">${f.name}</p>
+              <p class="text-xs text-slate-400">
+                High ₹${(f.monthHigh || 0).toFixed(2)} · NAV ₹${(f.lastNav || 0).toFixed(2)} · Thr −${thr}%
+              </p>
+            </div>
+            <div class="text-right">
+              <p class="text-sm font-medium ${hit ? 'text-amber-400' : 'text-slate-400'}">${dropF.toFixed(2)}%</p>
+              ${hit ? '<span class="badge bg-amber-500 text-black">DIP</span>' : '<span class="text-xs text-slate-500">OK</span>'}
+            </div>
+          </div>
+          ${hit && suggest > 0 ? `<p class="text-xs text-amber-200 mt-1.5">Allocation alert: consider deploying ~₹${suggest.toLocaleString('en-IN')} (your ${f.alloc}% target) from Reserve</p>` : ''}
+        </div>`;
+      }).join('') || '<p class="text-slate-500 text-sm">No funds</p>';
+
+      // Select
+      const sel = document.getElementById('deploy-fund-select');
+      sel.innerHTML = state.funds.map(f => `<option value="${f.id}">${f.name}</option>`).join('');
+    }
+
+    function renderInsights() {
+      // Chart
+      const ctx = document.getElementById('perfChart');
+      const labels = state.funds.map(f => f.name.slice(0, 12));
+      const returns = state.funds.map(f => {
+        const cost = (f.units || 0) * (f.avgNav || 0);
+        const cur = (f.units || 0) * (f.lastNav || f.avgNav || 0);
+        return cost ? ((cur - cost) / cost) * 100 : 0;
+      });
+      if (perfChart) perfChart.destroy();
+      perfChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Return %',
+            data: returns,
+            backgroundColor: returns.map(r => r >= 0 ? '#22c55e88' : '#ef444488'),
+            borderColor: returns.map(r => r >= 0 ? '#22c55e' : '#ef4444'),
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
+            x: { ticks: { color: '#94a3b8', maxRotation: 45 }, grid: { display: false } }
+          }
+        }
+      });
+
+      // Fund cards
+      const box = document.getElementById('insights-funds');
+      box.innerHTML = state.funds.map(f => {
+        const cost = (f.units || 0) * (f.avgNav || 0);
+        const cur = (f.units || 0) * (f.lastNav || f.avgNav || 0);
+        const pnl = cur - cost;
+        const pct = cost ? (pnl / cost) * 100 : 0;
+        return `<div class="flex justify-between items-center border-b border-slate-700 pb-2">
+          <div class="min-w-0">
+            <p class="text-sm truncate">${f.name}</p>
+            <p class="text-xs text-slate-400">Invested ${fmt(cost)} · Now ${fmt(cur)}</p>
+          </div>
+          <div class="text-right ${pct >= 0 ? 'positive' : 'negative'}">
+            <p class="font-medium">${fmtPct(pct)}</p>
+            <p class="text-xs">${fmt(pnl)}</p>
+          </div>
+        </div>`;
+      }).join('') || '<p class="text-slate-500">Add funds to see insights</p>';
+
+      // Tips
+      const tips = document.getElementById('insights-tips');
+      const tipsArr = [];
+      const totalAlloc = state.funds.reduce((s, f) => s + (f.alloc || 0), 0);
+      if (Math.abs(totalAlloc - 100) > 1 && state.funds.length) {
+        tipsArr.push(`• Total target allocation is ${totalAlloc.toFixed(1)}%. Consider rebalancing to 100%.`);
+      }
+      if (state.reserve > 0) {
+        tipsArr.push(`• Cash available ${fmt(totalAvailable())} (Regular ${fmt(state.regular)} + Dip ${fmt(state.reserve)}). Use dip signals to deploy.`);
+      }
+      const under = state.funds.filter(f => {
+        const cost = (f.units || 0) * (f.avgNav || 0);
+        const cur = (f.units || 0) * (f.lastNav || f.avgNav || 0);
+        return cost && ((cur - cost) / cost) * 100 < -5;
+      });
+      if (under.length) {
+        tipsArr.push(`• ${under.length} fund(s) are down >5%. Review allocation or average down on dips.`);
+      }
+      if (!state.sip.amount) tipsArr.push('• Set a monthly SIP amount to automate regular investing.');
+      if (!tipsArr.length) tipsArr.push('• Portfolio looks healthy. Keep tracking month highs and stay disciplined on dips.');
+      tips.innerHTML = tipsArr.map(t => `<p>${t}</p>`).join('');
+    }
+
+    function renderAll() {
+      renderDashboard();
+      renderFunds();
+      renderSip();
+      renderDeploy();
+    }
+
+
+    // ========== HISTORY / TRANSACTIONS ==========
+    let historyFilter = 'all';
+    let editingTxId = null;
+
+    function ensureTxIds() {
+      let changed = false;
+      (state.transactions || []).forEach((t, i) => {
+        if (!t.id) { t.id = 'tx' + Date.now() + '_' + i; changed = true; }
+      });
+      (state.sipHistory || []).forEach((h, i) => {
+        if (!h.id) { h.id = 'sip' + Date.now() + '_' + i; changed = true; }
+      });
+      if (changed) save();
+    }
+
+    function setHistoryFilter(f) {
+      historyFilter = f;
+      ['all','deploy','sip','reserve'].forEach(x => {
+        const el = document.getElementById('hf-' + x);
+        if (!el) return;
+        el.className = 'btn px-3 py-1.5 rounded-lg ' + (x === f ? 'bg-green-600 text-white' : 'bg-slate-700 text-slate-300');
+      });
+      renderHistory();
+    }
+
+    function renderHistory() {
+      ensureTxIds();
+      const box = document.getElementById('history-tx-list');
+      if (!box) return;
+      let list = (state.transactions || []).slice().sort((a, b) => new Date(b.date) - new Date(a.date));
+      if (historyFilter !== 'all') {
+        list = list.filter(t => t.type === historyFilter || (historyFilter === 'deploy' && t.type === 'deploy'));
+      }
+      if (!list.length) {
+        box.innerHTML = '<p class="text-slate-500 py-4 text-center">No transactions yet</p>';
+      } else {
+        box.innerHTML = list.map(t => {
+          const fund = t.fundId ? state.funds.find(f => f.id === t.fundId) : null;
+          const d = new Date(t.date);
+          const ds = isNaN(d) ? t.date : d.toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+          const typeColor = t.type === 'deploy' ? 'text-amber-400' : t.type === 'sip' ? 'text-green-400' : t.type === 'reserve' ? 'text-blue-400' : 'text-slate-300';
+          return `<div class="border border-slate-700 rounded-lg p-3">
+            <div class="flex justify-between items-start gap-2">
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-medium uppercase ${typeColor}">${t.type || 'tx'}</span>
+                  <span class="font-semibold">${fmt(t.amount)}</span>
+                </div>
+                <p class="text-xs text-slate-400 mt-0.5">${ds}</p>
+                ${fund ? `<p class="text-xs text-slate-300 truncate">${fund.name}</p>` : ''}
+                ${t.note ? `<p class="text-xs text-slate-500 mt-0.5">${t.note}</p>` : ''}
+              </div>
+              <div class="flex gap-1 shrink-0">
+                <button onclick="editTransaction('${t.id}')" class="btn text-xs bg-slate-700 px-2 py-1 rounded">Edit</button>
+                <button onclick="deleteTransaction('${t.id}')" class="btn text-xs bg-red-900/50 text-red-300 px-2 py-1 rounded">Del</button>
+              </div>
+            </div>
+          </div>`;
+        }).join('');
+      }
+
+      // SIP monthly history
+      const sipBox = document.getElementById('history-sip-list');
+      if (!sipBox) return;
+      const sips = (state.sipHistory || []).slice();
+      if (!sips.length) {
+        sipBox.innerHTML = '<p class="text-slate-500 py-2 text-center">No SIP runs yet</p>';
+      } else {
+        sipBox.innerHTML = sips.map(h => {
+          const d = new Date(h.date);
+          const ds = isNaN(d) ? h.date : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+          return `<div class="border border-slate-700 rounded-lg p-3">
+            <div class="flex justify-between items-start">
+              <div>
+                <p class="font-medium">${fmt(h.amount)} SIP</p>
+                <p class="text-xs text-slate-400">${ds}</p>
+                <p class="text-xs text-slate-500">Allocated ${fmt(h.allocated || 0)} · Reserve ${fmt(h.toReserve || 0)}</p>
+              </div>
+              <div class="flex gap-1">
+                <button onclick="editSipHistory('${h.id}')" class="btn text-xs bg-slate-700 px-2 py-1 rounded">Edit</button>
+                <button onclick="deleteSipHistory('${h.id}')" class="btn text-xs bg-red-900/50 text-red-300 px-2 py-1 rounded">Del</button>
+              </div>
+            </div>
+          </div>`;
+        }).join('');
+      }
+    }
+
+    function openAddTransaction() {
+      editingTxId = null;
+      document.getElementById('tx-modal-title').textContent = 'Add Transaction';
+      document.getElementById('tx-edit-id').value = '';
+      document.getElementById('tx-type').value = 'manual';
+      document.getElementById('tx-amount').value = '';
+      document.getElementById('tx-note').value = '';
+      const now = new Date();
+      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+      document.getElementById('tx-date').value = now.toISOString().slice(0, 16);
+      fillTxFundSelect();
+      document.getElementById('txModal').classList.remove('hidden');
+    }
+
+    function editTransaction(id) {
+      const t = (state.transactions || []).find(x => x.id === id);
+      if (!t) return toast('Transaction not found');
+      editingTxId = id;
+      document.getElementById('tx-modal-title').textContent = 'Edit Transaction';
+      document.getElementById('tx-edit-id').value = id;
+      document.getElementById('tx-type').value = t.type || 'manual';
+      document.getElementById('tx-amount').value = t.amount || '';
+      document.getElementById('tx-note').value = t.note || '';
+      fillTxFundSelect(t.fundId);
+      const d = new Date(t.date);
+      if (!isNaN(d)) {
+        d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+        document.getElementById('tx-date').value = d.toISOString().slice(0, 16);
+      }
+      document.getElementById('txModal').classList.remove('hidden');
+    }
+
+    function fillTxFundSelect(selected) {
+      const sel = document.getElementById('tx-fund');
+      sel.innerHTML = '<option value="">— None —</option>' +
+        state.funds.map(f => `<option value="${f.id}" ${f.id === selected ? 'selected' : ''}>${f.name}</option>`).join('');
+    }
+
+    function closeTxModal() {
+      document.getElementById('txModal').classList.add('hidden');
+      editingTxId = null;
+    }
+
+    function saveTransaction() {
+      const type = document.getElementById('tx-type').value;
+      const amount = parseFloat(document.getElementById('tx-amount').value);
+      const fundId = document.getElementById('tx-fund').value || null;
+      const note = document.getElementById('tx-note').value.trim();
+      const dateVal = document.getElementById('tx-date').value;
+      if (!amount || amount <= 0) return toast('Enter a valid amount');
+      const date = dateVal ? new Date(dateVal).toISOString() : new Date().toISOString();
+
+      if (editingTxId) {
+        const t = state.transactions.find(x => x.id === editingTxId);
+        if (t) {
+          // Adjust reserve if deploy/reserve type changed in a simple way
+          t.type = type;
+          t.amount = amount;
+          t.fundId = fundId;
+          t.note = note;
+          t.date = date;
+        }
+      } else {
+        state.transactions.unshift({
+          id: 'tx' + Date.now(),
+          type, amount, fundId, note, date
+        });
+        // Side effects for new entries
+        if (type === 'reserve') {
+          state.reserve = (state.reserve || 0) + amount;
+        } else if (type === 'manual') {
+          state.regular = (state.regular || 0) + amount;
+        } else if (type === 'deploy') {
+          if (amount > totalAvailable() + 0.01) toast('Warning: amount > available cash');
+          let left = amount;
+          const fromDip = Math.min(state.reserve || 0, left);
+          state.reserve -= fromDip;
+          left -= fromDip;
+          if (left > 0) state.regular = Math.max(0, (state.regular || 0) - left);
+          if (fundId) {
+            const f = state.funds.find(x => x.id === fundId);
+            if (f) {
+              const nav = f.lastNav || f.avgNav || 1;
+              const units = amount / nav;
+              const prevCost = (f.avgNav || 0) * (f.units || 0);
+              f.units = (f.units || 0) + units;
+              f.avgNav = f.units ? (prevCost + amount) / f.units : nav;
+            }
+          }
+        }
+        state.activity.unshift({
+          date,
+          text: `${type.toUpperCase()} ₹${amount.toLocaleString('en-IN')}${fundId ? ' → fund' : ''}`
+        });
+      }
+      save();
+      closeTxModal();
+      renderHistory();
+      renderDashboard();
+      renderDeploy();
+      toast('Transaction saved');
+    }
+
+    function deleteTransaction(id) {
+      const t = (state.transactions || []).find(x => x.id === id);
+      if (!t) return;
+      if (!confirm(`Delete this ${t.type} of ${fmt(t.amount)}?`)) return;
+
+      // Reverse simple reserve impact
+      if (t.type === 'reserve') {
+        state.reserve = Math.max(0, (state.reserve || 0) - (t.amount || 0));
+      } else if (t.type === 'manual') {
+        state.regular = Math.max(0, (state.regular || 0) - (t.amount || 0));
+      } else if (t.type === 'deploy') {
+        // Return cash to Dip Reserve by default
+        state.reserve = (state.reserve || 0) + (t.amount || 0);
+      }
+      state.transactions = state.transactions.filter(x => x.id !== id);
+      save();
+      renderHistory();
+      renderDashboard();
+      renderDeploy();
+      toast('Transaction deleted');
+    }
+
+    function editSipHistory(id) {
+      const h = (state.sipHistory || []).find(x => x.id === id);
+      if (!h) return;
+      const amt = prompt('SIP total amount (₹)', h.amount);
+      if (amt === null) return;
+      const allocated = prompt('Amount allocated to funds (₹)', h.allocated);
+      if (allocated === null) return;
+      const toReserve = prompt('Amount to Reserve (₹)', h.toReserve);
+      if (toReserve === null) return;
+      h.amount = parseFloat(amt) || 0;
+      h.allocated = parseFloat(allocated) || 0;
+      h.toReserve = parseFloat(toReserve) || 0;
+      save();
+      renderHistory();
+      renderSip();
+      toast('SIP history updated');
+    }
+
+    function deleteSipHistory(id) {
+      const h = (state.sipHistory || []).find(x => x.id === id);
+      if (!h) return;
+      if (!confirm(`Delete SIP record of ${fmt(h.amount)} on ${new Date(h.date).toLocaleDateString('en-IN')}?`)) return;
+      state.sipHistory = state.sipHistory.filter(x => x.id !== id);
+      save();
+      renderHistory();
+      renderSip();
+      toast('SIP history deleted');
+    }
+
+
+    // ========== BACKUP / RESTORE ==========
+    function exportData() {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `smartfund-backup-${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast('Backup downloaded');
+    }
+    function importData(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result);
+          if (!data.funds) throw new Error('Invalid file');
+          if (confirm('This will replace all current data. Continue?')) {
+            state = data;
+            save();
+            renderAll();
+            toast('Data restored');
+          }
+        } catch (err) {
+          toast('Invalid backup file');
+        }
+      };
+      reader.readAsText(file);
+      e.target.value = '';
+    }
+
+    // ========== INIT ==========
+    load();
+    renderAll();
+    // Service worker for PWA
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>
