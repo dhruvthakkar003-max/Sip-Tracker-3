@@ -60,6 +60,7 @@
       <button onclick="switchTab('sip')" id="tab-sip" class="shrink-0 py-3 px-2.5 sm:px-3 text-slate-400">SIP</button>
       <button onclick="switchTab('deploy')" id="tab-deploy" class="shrink-0 py-3 px-2.5 sm:px-3 text-slate-400">Deploy</button>
       <button onclick="switchTab('signals')" id="tab-signals" class="shrink-0 py-3 px-2.5 sm:px-3 font-semibold text-green-400">Signals</button>
+      <button onclick="switchTab('fundsig')" id="tab-fundsig" class="shrink-0 py-3 px-2.5 sm:px-3 text-slate-400">FundSig</button>
       <button onclick="switchTab('history')" id="tab-history" class="shrink-0 py-3 px-2.5 sm:px-3 text-slate-400">History</button>
       <button onclick="switchTab('insights')" id="tab-insights" class="shrink-0 py-3 px-2.5 sm:px-3 text-slate-400">Insights</button>
     </div>
@@ -365,6 +366,29 @@
     </section>
 
 
+
+    <!-- FUND SIGNALS -->
+    <section id="panel-fundsig" class="hidden space-y-4">
+      <div class="card p-4 border border-violet-500/30">
+        <div class="flex justify-between items-center gap-2">
+          <div>
+            <h3 class="font-semibold text-violet-300">Per-Fund Dip Verdicts</h3>
+            <p class="text-xs text-slate-400">Uses each fund’s threshold % vs its month high</p>
+          </div>
+          <button onclick="refreshFundSignals()" class="btn bg-violet-600 text-white px-3 py-2 rounded-lg text-sm shrink-0">↻ Refresh</button>
+        </div>
+        <p class="text-xs text-slate-500 mt-2" id="fundsig-updated">Tap Refresh to score all funds</p>
+      </div>
+      <div class="card p-3 text-xs text-slate-400 space-y-1">
+        <p><b class="text-slate-300">Normal:</b> price ≤ −threshold% from month high + RSI / down-days quality</p>
+        <p><b class="text-fuchsia-300">High conviction:</b> ≤ −(threshold+2.5)% depth + weak session (ETF) or multi-day NAV weakness</p>
+        <p>Primary threshold = value set on each fund in <b>Funds</b> tab (default 5%).</p>
+      </div>
+      <div id="fundsig-list" class="space-y-3">
+        <p class="text-center text-slate-500 py-6">No scan yet</p>
+      </div>
+    </section>
+
     <!-- HISTORY -->
     <section id="panel-history" class="hidden space-y-4">
       <div class="flex gap-2 text-sm">
@@ -567,7 +591,7 @@
       return (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
     }
     function switchTab(name) {
-      ['dashboard','funds','sip','deploy','signals','history','insights'].forEach(t => {
+      ['dashboard','funds','sip','deploy','signals','fundsig','history','insights'].forEach(t => {
         document.getElementById('panel-' + t).classList.toggle('hidden', t !== name);
         const tab = document.getElementById('tab-' + t);
         if (tab) {
@@ -581,6 +605,7 @@
       if (name === 'funds') renderFunds();
       if (name === 'sip') renderSip();
       if (name === 'signals') renderSignals();
+      if (name === 'fundsig') renderFundSignals();
       if (name === 'history') renderHistory();
     }
 
@@ -1737,6 +1762,259 @@
 
     function renderSignals() {
       // keeps last refresh result on screen
+    }
+
+
+    // ========== PER-FUND DIP SIGNALS ==========
+    let lastFundSignals = null;
+
+    function scoreFundSeries(closes, highs, lows, thr, hasOHLC) {
+      // closes: oldest -> newest numbers
+      if (!closes || closes.length < 15) return null;
+      const last = closes[closes.length - 1];
+      const prev = closes[closes.length - 2] || last;
+      const changePct = prev ? ((last - prev) / prev) * 100 : 0;
+      const monthSlice = closes.slice(-22);
+      const monthHigh = Math.max(...monthSlice);
+      const vsHigh = ((last - monthHigh) / monthHigh) * 100;
+      const rsi14 = rsi(closes, 14);
+      let consec = 0;
+      for (let i = closes.length - 1; i > 0; i--) {
+        if (closes[i] < closes[i - 1]) consec++;
+        else break;
+      }
+      let daysInZone = 0;
+      for (let i = closes.length - 1; i >= Math.max(0, closes.length - 15); i--) {
+        const rh = Math.max(...closes.slice(Math.max(0, i - 21), i + 1));
+        const d = ((closes[i] - rh) / rh) * 100;
+        if (d <= -thr) daysInZone++;
+        else if (daysInZone > 0) break;
+      }
+      const is5Low = last === Math.min(...closes.slice(-Math.min(5, closes.length)));
+      let closePos = null;
+      if (hasOHLC && highs && lows && highs.length === closes.length) {
+        const i = closes.length - 1;
+        const rng = Math.max(highs[i] - lows[i], 1e-9);
+        closePos = (last - lows[i]) / rng;
+      }
+
+      const gate = vsHigh <= -thr;
+      const deepThr = -(thr + 2.5); // e.g. threshold 5% → HC at -7.5%
+      let score = 0;
+      const notes = [];
+      if (gate) { score += 1.5; notes.push('Threshold gate MET'); }
+      else notes.push(`Need ≤ −${thr}% vs month high (now ${vsHigh.toFixed(2)}%)`);
+
+      if (gate && daysInZone >= 2) { score += 1; notes.push('2nd+ day in dip zone'); }
+      else if (gate && daysInZone === 1) { score -= 0.3; notes.push('First day in zone — prefer wait'); }
+
+      if (consec >= 2 && consec <= 4) { score += 1; notes.push(consec + ' down days'); }
+      if (rsi14 != null) {
+        if (rsi14 < 30) { score += 2; notes.push('RSI ' + rsi14.toFixed(0) + ' strong oversold'); }
+        else if (rsi14 <= 35) { score += 1.2; notes.push('RSI ' + rsi14.toFixed(0) + ' oversold'); }
+        else if (rsi14 <= 40 && gate) { score += 0.4; notes.push('RSI ' + rsi14.toFixed(0)); }
+      }
+      if (vsHigh <= deepThr) { score += 1.5; notes.push('Deep vs threshold+2.5'); }
+      else if (vsHigh <= -thr - 1) { score += 0.5; }
+
+      // High conviction for fund
+      let highConviction = false;
+      if (hasOHLC && closePos != null) {
+        if (vsHigh <= deepThr && closePos <= 0.35) {
+          highConviction = true;
+          score += 1.5;
+          notes.push('HC: deep dip + weak session close');
+        }
+      } else {
+        // NAV-only: HC if deep + multi-day weakness + oversold
+        if (vsHigh <= deepThr && consec >= 2 && rsi14 != null && rsi14 <= 35) {
+          highConviction = true;
+          score += 1.2;
+          notes.push('HC (NAV): deep + ≥2 down + RSI≤35');
+        } else if (vsHigh <= deepThr && is5Low) {
+          highConviction = true;
+          score += 1;
+          notes.push('HC (NAV): deep + 5-session low');
+        }
+      }
+
+      let plan = false;
+      let planPct = 0;
+      let planReason = '';
+      if (!gate) {
+        planReason = 'Below threshold not met — no dip plan.';
+      } else if (daysInZone === 1 && (rsi14 == null || rsi14 > 40)) {
+        planReason = 'First touch — watch; wait for 2nd day or RSI≤35.';
+      } else if (gate && (daysInZone >= 2 || (rsi14 != null && rsi14 <= 35))) {
+        plan = true;
+        planPct = vsHigh <= deepThr ? 70 : vsHigh <= -thr - 1 ? 50 : 35;
+        planReason = 'Normal dip plan OK for this fund.';
+      } else if (gate && score >= 3) {
+        plan = true; planPct = 30;
+        planReason = 'Gate met with moderate quality.';
+      } else {
+        planReason = 'Gate weak quality — wait.';
+      }
+
+      if (highConviction) {
+        plan = true;
+        planPct = Math.max(planPct, (vsHigh <= deepThr - 1 || is5Low) ? 100 : 50);
+        planReason = 'High conviction on this fund — larger manual tranche OK.';
+      }
+
+      let verdict = 'AVOID';
+      if (score >= 4.5 || highConviction) verdict = 'STRONG BUY';
+      else if (score >= 3) verdict = 'BUY';
+      else if (score >= 2 || gate) verdict = 'WATCH';
+
+      return {
+        last, monthHigh, vsHigh, rsi14, consec, daysInZone, gate, highConviction,
+        closePos, is5Low, score, verdict, plan, planPct, planReason, notes, changePct, thr, deepThr
+      };
+    }
+
+    async function loadFundPriceSeries(fund) {
+      // Returns {closes, highs, lows, hasOHLC, source}
+      if (fund.ticker) {
+        try {
+          const t = fund.ticker.includes('.') ? fund.ticker : fund.ticker + '.NS';
+          const url = 'https://proxy.cors.dev/https://query1.finance.yahoo.com/v8/finance/chart/' +
+            encodeURIComponent(t) + '?interval=1d&range=3mo';
+          const res = await fetch(url, { mode: 'cors' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const json = await res.json();
+          const result = json?.chart?.result?.[0];
+          const q = result?.indicators?.quote?.[0];
+          if (!q?.close) throw new Error('no data');
+          const closes = [], highs = [], lows = [];
+          for (let i = 0; i < q.close.length; i++) {
+            if (q.close[i] == null) continue;
+            closes.push(q.close[i]);
+            highs.push(q.high[i] ?? q.close[i]);
+            lows.push(q.low[i] ?? q.close[i]);
+          }
+          if (closes.length >= 15) return { closes, highs, lows, hasOHLC: true, source: 'market' };
+        } catch (e) { console.warn('ticker series', fund.ticker, e); }
+      }
+      if (fund.code) {
+        try {
+          const urls = MF_PROXIES.map(fn => fn(fund.code));
+          const data = await fetchJsonWithFallback(urls);
+          if (!data?.data?.length) throw new Error('no nav');
+          // mfapi returns newest first
+          const rows = data.data.slice(0, 60).reverse();
+          const closes = rows.map(d => parseFloat(d.nav)).filter(n => !isNaN(n));
+          if (closes.length >= 15) return { closes, highs: null, lows: null, hasOHLC: false, source: 'nav' };
+        } catch (e) { console.warn('nav series', fund.code, e); }
+      }
+      // fallback: stored history
+      if (fund.history && fund.history.length >= 15) {
+        const closes = fund.history.map(h => h.nav).filter(n => n != null).reverse();
+        // history may already be newest-first depending on storage
+        const seq = fund.history.map(h => h.nav).filter(n => n != null);
+        // ensure chronological: if first > last often newest first from mfapi storage
+        let c = seq.slice();
+        if (c.length >= 2 && fund.history[0].date && fund.history[fund.history.length-1].date) {
+          // keep as chronological ascending by reversing if needed - score only needs recent end
+          c = seq.slice().reverse();
+        }
+        if (c.length >= 15) return { closes: c, highs: null, lows: null, hasOHLC: false, source: 'cached' };
+      }
+      return null;
+    }
+
+    async function refreshFundSignals() {
+      if (!state.funds.length) return toast('Add funds first');
+      toast('Scoring all funds…');
+      const box = document.getElementById('fundsig-list');
+      const updated = document.getElementById('fundsig-updated');
+      if (updated) updated.textContent = 'Loading…';
+      if (box) box.innerHTML = '<p class="text-slate-500 text-center py-4">Scanning funds…</p>';
+
+      const results = [];
+      for (const f of state.funds) {
+        const thr = f.dipThreshold || 5;
+        try {
+          const series = await loadFundPriceSeries(f);
+          if (!series) {
+            results.push({ fund: f, error: 'No price history (set code or ticker)' });
+            continue;
+          }
+          const scored = scoreFundSeries(series.closes, series.highs, series.lows, thr, series.hasOHLC);
+          if (!scored) {
+            results.push({ fund: f, error: 'Not enough history' });
+            continue;
+          }
+          // Sync month high / last on fund for consistency
+          f.lastNav = scored.last;
+          if (!f.monthHigh || scored.monthHigh > f.monthHigh) f.monthHigh = scored.monthHigh;
+          // Also ensure monthHigh at least series max recent
+          f.monthHigh = Math.max(f.monthHigh || 0, scored.monthHigh);
+          results.push({ fund: f, scored, source: series.source });
+        } catch (e) {
+          results.push({ fund: f, error: e.message || 'Failed' });
+        }
+      }
+      save();
+      lastFundSignals = { at: new Date().toISOString(), results };
+      renderFundSignals();
+      renderFunds();
+      renderDashboard();
+      const buys = results.filter(r => r.scored && (r.scored.verdict === 'BUY' || r.scored.verdict === 'STRONG BUY')).length;
+      const hcs = results.filter(r => r.scored && r.scored.highConviction).length;
+      toast(`Fund scan done · ${buys} buy · ${hcs} high conviction`);
+      if (updated) updated.textContent = 'Updated ' + new Date().toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    }
+
+    function renderFundSignals() {
+      const box = document.getElementById('fundsig-list');
+      if (!box) return;
+      if (!lastFundSignals || !lastFundSignals.results) {
+        box.innerHTML = '<p class="text-center text-slate-500 py-6">Tap Refresh to score each fund</p>';
+        return;
+      }
+      const avail = typeof totalAvailable === 'function' ? totalAvailable() : 0;
+      box.innerHTML = lastFundSignals.results.map(r => {
+        const f = r.fund;
+        if (r.error) {
+          return `<div class="card p-3 border border-slate-700">
+            <p class="font-medium truncate">${f.name}</p>
+            <p class="text-xs text-red-400 mt-1">${r.error}</p>
+          </div>`;
+        }
+        const s = r.scored;
+        const vc = s.verdict === 'STRONG BUY' ? 'text-green-400' : s.verdict === 'BUY' ? 'text-green-300' : s.verdict === 'WATCH' ? 'text-amber-400' : 'text-slate-400';
+        const border = s.highConviction ? 'border-fuchsia-500/50' : s.plan ? 'border-green-500/30' : 'border-slate-700';
+        const sugAmt = s.plan && avail > 0 ? Math.round(avail * (s.planPct / 100) * ((f.alloc || 0) / 100 || 0.2)) : 0;
+        return `<div class="card p-3 border ${border}">
+          <div class="flex justify-between gap-2 items-start">
+            <div class="min-w-0">
+              <p class="font-medium truncate">${f.name}</p>
+              <p class="text-xs text-slate-500">Thr −${s.thr}% · Alloc ${f.alloc || 0}% · ${r.source || ''}</p>
+            </div>
+            <div class="text-right shrink-0">
+              <p class="font-bold ${vc}">${s.verdict}</p>
+              ${s.highConviction ? '<p class="text-[10px] text-fuchsia-400 font-semibold">HIGH CONVICTION</p>' : ''}
+              <p class="text-xs text-slate-500">Score ${s.score.toFixed(1)}</p>
+            </div>
+          </div>
+          <div class="grid grid-cols-3 gap-2 mt-2 text-center text-xs">
+            <div><p class="text-slate-500">Price</p><p class="font-semibold">₹${s.last.toFixed(2)}</p></div>
+            <div><p class="text-slate-500">Month High</p><p class="font-semibold">₹${s.monthHigh.toFixed(2)}</p></div>
+            <div><p class="text-slate-500">vs High</p><p class="font-semibold ${s.gate ? 'text-amber-400' : ''}">${s.vsHigh.toFixed(2)}%</p></div>
+          </div>
+          <div class="flex flex-wrap gap-2 mt-2 text-[11px] text-slate-400">
+            <span>RSI ${s.rsi14 != null ? s.rsi14.toFixed(0) : '—'}</span>
+            <span>· ${s.consec} down days</span>
+            <span>· zone ${s.daysInZone}d</span>
+            ${s.closePos != null ? `<span>· close ${(s.closePos*100).toFixed(0)}% range</span>` : ''}
+          </div>
+          <p class="text-xs mt-2 ${s.plan ? 'text-green-300' : 'text-slate-500'}">${s.planReason}</p>
+          ${s.plan ? `<p class="text-xs text-cyan-300 mt-1">Suggested ~${s.planPct}% of this fund’s share
+            ${sugAmt > 0 ? `(≈ ₹${sugAmt.toLocaleString('en-IN')} if using alloc from available cash)` : ''}</p>
+            <button onclick="switchTab('deploy')" class="mt-2 text-xs bg-violet-600 text-white px-3 py-1 rounded">Deploy →</button>` : ''}
+        </div>`;
+      }).join('');
     }
 
     // ========== CASH: REGULAR + DIP RESERVE ==========
