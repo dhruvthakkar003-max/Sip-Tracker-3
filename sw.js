@@ -1,4 +1,4 @@
-const CACHE = 'smartfund-v9';
+const CACHE = 'smartfund-v11';
 const ASSETS = [
   './',
   './index.html',

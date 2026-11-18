@@ -277,6 +277,26 @@
         <p class="text-xs text-slate-500 mt-3" id="verdict-score"></p>
       </div>
 
+      <!-- Plan Regular fund deploy -->
+      <div id="signals-plan" class="card p-4 border border-cyan-500/30">
+        <h3 class="font-semibold text-cyan-400 mb-1 text-sm">Plan Regular Fund Deploy? (normal rules)</h3>
+        <p class="text-xs text-slate-500 mb-2">Gate: Nifty ≤ −2.5% from month high, then quality filters</p>
+        <div id="plan-content" class="text-sm text-slate-400">Refresh to evaluate</div>
+      </div>
+
+      <!-- High conviction -->
+      <div id="signals-hc" class="card p-4 border border-fuchsia-500/40">
+        <h3 class="font-semibold text-fuchsia-400 mb-1 text-sm">High Conviction Filter</h3>
+        <p class="text-xs text-slate-500 mb-2">Stricter: ≤ −5% vs high + close in bottom 35% of day (targets deeper dips)</p>
+        <div id="hc-content" class="text-sm text-slate-400">Refresh to evaluate</div>
+      </div>
+
+      <!-- Scale-in plan -->
+      <div class="card p-4">
+        <h3 class="font-semibold mb-2 text-sm">Scale-in Plan (suggested)</h3>
+        <div id="scale-in-plan" class="text-sm space-y-1.5 text-slate-400">Refresh to see levels</div>
+      </div>
+
       <!-- Price snapshot -->
       <div class="card p-4">
         <h3 class="font-semibold mb-3 text-sm">Price Snapshot</h3>
@@ -329,13 +349,16 @@
 
       <!-- Strategy rules -->
       <div class="card p-4">
-        <h3 class="font-semibold mb-2 text-sm">Strategy Rules (1-Day Buy on Dip)</h3>
+        <h3 class="font-semibold mb-2 text-sm">Strategy Rules (enhanced)</h3>
         <ul class="text-xs text-slate-400 space-y-1.5 list-disc pl-4">
-          <li><b class="text-slate-300">RSI &lt; 35</b> → oversold (strong dip signal)</li>
-          <li><b class="text-slate-300">Price below SMA20</b> → short-term weakness / dip</li>
-          <li><b class="text-slate-300">Near lower Bollinger Band</b> → stretched downside</li>
-          <li><b class="text-slate-300">Stochastic &lt; 25</b> → momentum oversold</li>
-          <li><b class="text-slate-300">≥ 2.5% below recent high</b> → meaningful pullback</li>
+          <li><b class="text-slate-300">Primary gate (normal):</b> Nifty ≤ <b>−2.5%</b> from month / ~1M high</li>
+          <li><b class="text-slate-300">Second-touch:</b> prefer 2nd day still ≤ −2.5% (first print = WATCH only)</li>
+          <li><b class="text-slate-300">Consecutive downs:</b> prefer 2nd–4th down day</li>
+          <li><b class="text-slate-300">RSI ≤ 35</b> + Stoch / BB / below SMA20 + volume</li>
+          <li><b class="text-slate-300">Scale-in (normal):</b> ~⅓ at −2.5%, ~⅓ at −4%, rest at −5% / RSI &lt; 30</li>
+          <li><b class="text-fuchsia-300">High conviction:</b> ≤ <b>−5%</b> vs high <b>and</b> close in bottom 35% of day candle</li>
+          <li><b class="text-fuchsia-300">HC scale-in:</b> 40–50% at HC trigger; rest at −6% or 5-day low</li>
+          <li><b class="text-slate-300">Expiry week:</b> prefer deeper dip (−3%+) or RSI ≤ 35</li>
           <li>Score ≥ 4 → <span class="text-green-400">STRONG BUY</span> · 3 → <span class="text-green-300">BUY</span> · 2 → <span class="text-amber-400">WATCH</span> · &lt;2 → <span class="text-slate-400">AVOID</span></li>
         </ul>
       </div>
@@ -1235,12 +1258,13 @@
     }
 
     /** Score one day using only data available up to that index (no look-ahead) */
-    function scoreDay(closes, highs, lows, opens, idx) {
-      if (idx < 20) return null; // need enough history
+    function scoreDay(closes, highs, lows, opens, volumes, idx, monthHighHint) {
+      if (idx < 20) return null;
       const c = closes.slice(0, idx + 1);
       const h = highs.slice(0, idx + 1);
       const l = lows.slice(0, idx + 1);
       const o = opens.slice(0, idx + 1);
+      const v = volumes ? volumes.slice(0, idx + 1) : [];
       const last = c[c.length - 1];
       const prev = c.length > 1 ? c[c.length - 2] : last;
       const changePct = prev ? ((last - prev) / prev) * 100 : 0;
@@ -1253,14 +1277,76 @@
       const stoch = stochastic(h, l, c, 14);
       const lookback = Math.min(22, c.length);
       const recentHigh = Math.max(...c.slice(-lookback));
-      const vsHighPct = ((last - recentHigh) / recentHigh) * 100;
+      // Prefer calendar month high if provided for latest bars, else rolling
+      const refHigh = monthHighHint && monthHighHint > 0 ? Math.max(monthHighHint, recentHigh) : recentHigh;
+      const vsHighPct = ((last - refHigh) / refHigh) * 100;
+
+      // Consecutive down closes ending at idx
+      let consecDown = 0;
+      for (let i = c.length - 1; i > 0; i--) {
+        if (c[i] < c[i - 1]) consecDown++;
+        else break;
+      }
+
+      // First vs second touch of -2.5% zone in current pullback from recent high
+      let daysInDipZone = 0;
+      for (let i = c.length - 1; i >= Math.max(0, c.length - 15); i--) {
+        const rh = Math.max(...c.slice(Math.max(0, i - 21), i + 1));
+        const drop = ((c[i] - rh) / rh) * 100;
+        if (drop <= -2.5) daysInDipZone++;
+        else if (daysInDipZone > 0) break;
+      }
+      const isFirstTouch = daysInDipZone === 1;
+      const isSecondTouchOrMore = daysInDipZone >= 2;
+
+      // Volume vs 20-day avg
+      let volRatio = null;
+      if (v.length >= 21 && v[v.length - 1] != null) {
+        const avgVol = v.slice(-21, -1).reduce((a, b) => a + (b || 0), 0) / 20;
+        if (avgVol > 0) volRatio = v[v.length - 1] / avgVol;
+      }
+
+      // Expiry week approx: last 7 calendar days of month (crude but useful)
+      const d = null; // filled by caller via date on result
+      let expiryCaution = false;
 
       let score = 0;
       const alerts = [];
+      const gate = vsHighPct <= -2.5;
 
+      // PRIMARY GATE messaging
+      if (gate) {
+        alerts.push({ type: 'buy', text: `Primary gate MET: ${vsHighPct.toFixed(2)}% vs high (≤ −2.5%)` });
+        score += 1.5;
+      } else {
+        alerts.push({ type: 'ok', text: `Primary gate not met: ${vsHighPct.toFixed(2)}% vs high (need ≤ −2.5%)` });
+      }
+
+      // Second-touch rule
+      if (gate && isFirstTouch) {
+        alerts.push({ type: 'warn', text: 'First touch of −2.5% zone → prefer WATCH, wait for second day' });
+        score -= 0.5;
+      } else if (gate && isSecondTouchOrMore) {
+        alerts.push({ type: 'buy', text: `Second-touch+: day ${daysInDipZone} still in −2.5% zone` });
+        score += 1.2;
+      }
+
+      // Consecutive down days
+      if (consecDown >= 2 && consecDown <= 4) {
+        alerts.push({ type: 'buy', text: `${consecDown} consecutive down days — better than first red day` });
+        score += 1;
+      } else if (consecDown === 1 && gate) {
+        alerts.push({ type: 'ok', text: 'Only 1 down day so far — early in the fall' });
+      } else if (consecDown >= 5) {
+        alerts.push({ type: 'warn', text: `${consecDown} down days — stretched; scale in, don't all-in` });
+        score += 0.3;
+      }
+
+      // RSI
       if (rsi14 != null) {
         if (rsi14 < 30) { score += 2; alerts.push({ type: 'buy', text: `RSI ${rsi14.toFixed(1)} strongly oversold` }); }
-        else if (rsi14 < 35) { score += 1; alerts.push({ type: 'buy', text: `RSI ${rsi14.toFixed(1)} oversold` }); }
+        else if (rsi14 <= 35) { score += 1.2; alerts.push({ type: 'buy', text: `RSI ${rsi14.toFixed(1)} ≤ 35 oversold` }); }
+        else if (rsi14 <= 40 && gate) { score += 0.5; alerts.push({ type: 'ok', text: `RSI ${rsi14.toFixed(1)} ≤ 40 acceptable with gate` }); }
         else if (rsi14 > 65) { alerts.push({ type: 'warn', text: `RSI ${rsi14.toFixed(1)} elevated` }); }
         else { alerts.push({ type: 'ok', text: `RSI ${rsi14.toFixed(1)} neutral` }); }
       }
@@ -1268,17 +1354,17 @@
       if (sma20) {
         const vs20 = ((last - sma20) / sma20) * 100;
         if (vs20 < -1.5) { score += 1; alerts.push({ type: 'buy', text: `${vs20.toFixed(2)}% below SMA20` }); }
-        else if (vs20 < 0) { score += 0.5; alerts.push({ type: 'ok', text: `Slightly below SMA20` }); }
-        else { alerts.push({ type: 'ok', text: `Above SMA20` }); }
+        else if (vs20 < 0) { score += 0.5; alerts.push({ type: 'ok', text: 'Slightly below SMA20' }); }
+        else { alerts.push({ type: 'ok', text: 'Above SMA20' }); }
       }
 
       if (bb) {
         const range = bb.upper - bb.lower;
         const pos = range > 0 ? (last - bb.lower) / range : 0.5;
-        if (pos < 0.15) { score += 1.5; alerts.push({ type: 'buy', text: `Near lower Bollinger Band` }); }
-        else if (pos < 0.35) { score += 0.5; alerts.push({ type: 'ok', text: `Lower half of BB` }); }
-        else if (pos > 0.85) { alerts.push({ type: 'warn', text: `Near upper BB` }); }
-        else { alerts.push({ type: 'ok', text: `Mid BB range` }); }
+        if (pos < 0.15) { score += 1.5; alerts.push({ type: 'buy', text: 'Near lower Bollinger Band' }); }
+        else if (pos < 0.35) { score += 0.5; alerts.push({ type: 'ok', text: 'Lower half of BB' }); }
+        else if (pos > 0.85) { alerts.push({ type: 'warn', text: 'Near upper BB' }); }
+        else { alerts.push({ type: 'ok', text: 'Mid BB range' }); }
       }
 
       if (stoch != null) {
@@ -1288,30 +1374,102 @@
         else { alerts.push({ type: 'ok', text: `Stoch ${stoch.toFixed(1)} neutral` }); }
       }
 
-      if (vsHighPct <= -5) { score += 1.5; alerts.push({ type: 'buy', text: `${vsHighPct.toFixed(2)}% below ~1M high` }); }
-      else if (vsHighPct <= -2.5) { score += 1; alerts.push({ type: 'buy', text: `${vsHighPct.toFixed(2)}% below recent high` }); }
-      else if (vsHighPct <= -1) { score += 0.5; alerts.push({ type: 'ok', text: `Mild pullback ${vsHighPct.toFixed(2)}%` }); }
-      else { alerts.push({ type: 'ok', text: `Near highs (${vsHighPct.toFixed(2)}%)` }); }
+      if (vsHighPct <= -5) { score += 1.5; alerts.push({ type: 'buy', text: `${vsHighPct.toFixed(2)}% vs high — deep pullback` }); }
+      else if (vsHighPct <= -4) { score += 1; alerts.push({ type: 'buy', text: `${vsHighPct.toFixed(2)}% vs high — scale-in level 2` }); }
+      else if (vsHighPct <= -2.5) { score += 0.5; alerts.push({ type: 'buy', text: `${vsHighPct.toFixed(2)}% vs high — scale-in level 1` }); }
 
       if (changePct <= -1) { score += 0.5; alerts.push({ type: 'buy', text: `Down day ${changePct.toFixed(2)}%` }); }
       else if (changePct >= 1.2) { alerts.push({ type: 'warn', text: `Strong up day +${changePct.toFixed(2)}%` }); }
 
-      // Candle pattern vs past sessions
+      // Volume
+      if (volRatio != null) {
+        if (volRatio >= 1.2) { score += 0.8; alerts.push({ type: 'buy', text: `Volume ${(volRatio).toFixed(1)}× 20d avg — confirms dip` }); }
+        else if (volRatio < 0.7) { alerts.push({ type: 'warn', text: `Volume ${(volRatio).toFixed(1)}× avg — thin move` }); }
+        else { alerts.push({ type: 'ok', text: `Volume ${(volRatio).toFixed(1)}× 20d avg` }); }
+      }
+
       if (patterns) {
         score += Math.max(-1, Math.min(2.5, patterns.patternScore));
         patterns.notes.forEach(n => alerts.push(n));
       }
 
+      // Close location in today's range (0 = low, 1 = high)
+      const dayRange = Math.max(h[h.length - 1] - l[l.length - 1], 1e-9);
+      const closePos = (last - l[l.length - 1]) / dayRange;
+      const is5DayLow = last === Math.min(...c.slice(-Math.min(5, c.length)));
+      const is3DayLow = last === Math.min(...c.slice(-Math.min(3, c.length)));
+
+      // HIGH CONVICTION: ≤ -5% vs high AND close in bottom 35% of day
+      // (keeps normal rules; this is an extra stricter badge)
+      let highConviction = false;
+      let hcReason = '';
+      let hcPct = 0;
+      if (vsHighPct <= -5 && closePos <= 0.35) {
+        highConviction = true;
+        score += 1.5;
+        alerts.push({ type: 'buy', text: 'HIGH CONVICTION: ≤ −5% vs high + close in bottom 35% of day' });
+        if (vsHighPct <= -6 || is5DayLow) {
+          hcReason = 'Deep HC: ≤ −5% weak close' + (vsHighPct <= -6 ? ' and ≤ −6%' : '') + (is5DayLow ? ' and 5-day low' : '') + ' — larger deploy OK.';
+          hcPct = 100;
+        } else {
+          hcReason = 'High conviction trigger met — deploy ~40–50% of planned cash; keep rest for −6% / 5-day low.';
+          hcPct = 50;
+        }
+      } else if (vsHighPct <= -5) {
+        hcReason = 'Depth ≤ −5% but close not weak enough (need bottom 35% of day). Normal scale-in still applies.';
+        alerts.push({ type: 'ok', text: `Deep dip ${vsHighPct.toFixed(2)}% but close pos ${(closePos*100).toFixed(0)}% of range (need ≤35% for HC)` });
+      } else {
+        hcReason = 'High conviction not met (need ≤ −5% vs high and weak close).';
+      }
+
+      // Plan quality: gate + not first-only + RSI  (NORMAL rules — unchanged)
+      let planDeploy = false;
+      let planReason = '';
+      let planPct = 0;
+      if (!gate) {
+        planReason = 'Do not plan Regular deploy — month-high gate (−2.5%) not met.';
+        planPct = 0;
+      } else if (isFirstTouch && (rsi14 == null || rsi14 > 40)) {
+        planReason = 'Gate met but first touch + RSI not oversold → WATCH only.';
+        planPct = 0;
+      } else if (gate && isSecondTouchOrMore && rsi14 != null && rsi14 <= 35) {
+        planDeploy = true;
+        planReason = 'Gate + second-touch + RSI ≤ 35 → plan Regular deploy.';
+        planPct = vsHighPct <= -5 ? 100 : vsHighPct <= -4 ? 70 : 40;
+        score += 0.5;
+      } else if (gate && rsi14 != null && rsi14 <= 30) {
+        planDeploy = true;
+        planReason = 'Gate + RSI ≤ 30 (strong) → plan deploy even if early touch.';
+        planPct = vsHighPct <= -5 ? 100 : 50;
+      } else if (gate && score >= 3) {
+        planDeploy = true;
+        planReason = 'Gate met with enough quality score → small plan OK.';
+        planPct = 30;
+      } else {
+        planReason = 'Gate may be met but quality filters insufficient — wait.';
+        planPct = 0;
+      }
+
       let verdict;
-      if (score >= 4) verdict = 'STRONG BUY';
+      if (!gate && score < 3) verdict = 'AVOID';
+      else if (score >= 4.5) verdict = 'STRONG BUY';
       else if (score >= 3) verdict = 'BUY';
-      else if (score >= 2) verdict = 'WATCH';
+      else if (score >= 2 || gate) verdict = 'WATCH';
       else verdict = 'AVOID';
+
+      // Scale-in suggestion based on depth
+      const scaleIn = [];
+      scaleIn.push({ level: '−2.5% vs high (normal)', action: 'Deploy ~30–40% of planned cash', active: vsHighPct <= -2.5 && vsHighPct > -4 });
+      scaleIn.push({ level: '−4% vs high (normal)', action: 'Deploy another ~30–40%', active: vsHighPct <= -4 && vsHighPct > -5 });
+      scaleIn.push({ level: '−5% or RSI < 30 (normal)', action: 'Deploy remaining / larger tranche', active: (vsHighPct <= -5 || (rsi14 != null && rsi14 < 30)) && !highConviction });
+      scaleIn.push({ level: 'HIGH CONVICTION (−5% + weak close)', action: 'Deploy ~40–50% (or more if −6% / 5-day low)', active: highConviction });
 
       return {
         score, verdict, alerts, last, changePct, sma20, sma50, rsi14, bb, stoch,
-        vsHighPct, recentHigh, dayHigh: h[h.length - 1], dayLow: l[l.length - 1],
-        patterns, open: o[o.length - 1]
+        vsHighPct, recentHigh: refHigh, dayHigh: h[h.length - 1], dayLow: l[l.length - 1],
+        patterns, open: o[o.length - 1], gate, consecDown, daysInDipZone, isFirstTouch,
+        isSecondTouchOrMore, volRatio, planDeploy, planReason, planPct, scaleIn,
+        highConviction, hcReason, hcPct, closePos, is5DayLow, is3DayLow
       };
     }
 
@@ -1333,25 +1491,53 @@
         const ts = result.timestamp || [];
         if (!q || !q.close) throw new Error('Incomplete OHLC');
 
-        const closes = [], highs = [], lows = [], opens = [], dates = [];
+        const closes = [], highs = [], lows = [], opens = [], volumes = [], dates = [];
         for (let i = 0; i < q.close.length; i++) {
           if (q.close[i] != null) {
             closes.push(q.close[i]);
             highs.push(q.high[i] ?? q.close[i]);
             lows.push(q.low[i] ?? q.close[i]);
             opens.push(q.open[i] ?? q.close[i]);
+            volumes.push(q.volume && q.volume[i] != null ? q.volume[i] : null);
             dates.push(ts[i] ? new Date(ts[i] * 1000) : null);
           }
         }
         if (closes.length < 30) throw new Error('Not enough history');
 
-        // Score EVERY daily candle using that day's live OHLC + past only (no look-ahead)
+        // Calendar month high for latest month (primary gate)
+        const lastDate = dates[dates.length - 1];
+        let monthHighHint = 0;
+        if (lastDate) {
+          const y = lastDate.getFullYear(), m = lastDate.getMonth();
+          for (let i = 0; i < closes.length; i++) {
+            if (dates[i] && dates[i].getFullYear() === y && dates[i].getMonth() === m) {
+              if (highs[i] > monthHighHint) monthHighHint = highs[i];
+              if (closes[i] > monthHighHint) monthHighHint = closes[i];
+            }
+          }
+        }
+
+        // Score EVERY daily candle (no look-ahead)
         const dayResults = [];
         for (let i = 20; i < closes.length; i++) {
-          const s = scoreDay(closes, highs, lows, opens, i);
+          // For historical days use rolling high; for latest use month high hint
+          const mh = (i === closes.length - 1) ? monthHighHint : 0;
+          const s = scoreDay(closes, highs, lows, opens, volumes, i, mh);
           if (s) {
             s.date = dates[i];
             s.idx = i;
+            // Expiry-week caution on latest
+            if (s.date && i === closes.length - 1) {
+              const dim = new Date(s.date.getFullYear(), s.date.getMonth() + 1, 0).getDate();
+              if (s.date.getDate() >= dim - 7) {
+                s.alerts.push({ type: 'warn', text: 'Near month-end / expiry window — prefer deeper dip or RSI ≤ 35' });
+                if (s.vsHighPct > -3 && (s.rsi14 == null || s.rsi14 > 35)) {
+                  s.planDeploy = false;
+                  s.planPct = 0;
+                  s.planReason = 'Expiry/month-end window with shallow dip — wait for −3% or RSI ≤ 35.';
+                }
+              }
+            }
             dayResults.push(s);
           }
         }
@@ -1452,6 +1638,63 @@
             </p>`;
         }
 
+        // Plan Regular deploy card (NORMAL rules)
+        const planBox = document.getElementById('plan-content');
+        if (planBox) {
+          const avail = (typeof totalAvailable === 'function') ? totalAvailable() : ((state.regular||0)+(state.reserve||0));
+          const reg = state.regular || 0;
+          if (today.planDeploy) {
+            const sug = Math.round(reg * (today.planPct / 100));
+            planBox.innerHTML = `
+              <p class="text-green-400 font-semibold mb-1">YES — plan Regular fund deploy today</p>
+              <p class="text-xs text-slate-300 mb-2">${today.planReason}</p>
+              <p class="text-sm">Suggested from Regular: <b class="text-cyan-400">${today.planPct}%</b>
+                ${reg > 0 ? `(~₹${sug.toLocaleString('en-IN')} of ₹${reg.toLocaleString('en-IN')})` : '(add cash to Regular Fund first)'}</p>
+              <p class="text-xs text-slate-500 mt-1">Total available (Regular+Dip): ₹${avail.toLocaleString('en-IN')}</p>
+              <button onclick="switchTab('deploy')" class="mt-2 text-xs bg-cyan-600 text-white px-3 py-1.5 rounded">Go to Deploy →</button>`;
+          } else {
+            planBox.innerHTML = `
+              <p class="text-slate-300 font-medium mb-1">No full plan today</p>
+              <p class="text-xs text-slate-400">${today.planReason || 'Conditions not met'}</p>
+              <p class="text-xs text-slate-500 mt-1">Gate: ${today.gate ? 'MET' : 'not met'} · Consec down: ${today.consecDown || 0} · Dip-zone days: ${today.daysInDipZone || 0}</p>`;
+          }
+        }
+
+        // High Conviction card
+        const hcBox = document.getElementById('hc-content');
+        if (hcBox) {
+          const reg = state.regular || 0;
+          const avail = (typeof totalAvailable === 'function') ? totalAvailable() : ((state.regular||0)+(state.reserve||0));
+          const cp = today.closePos != null ? (today.closePos * 100).toFixed(0) : '—';
+          if (today.highConviction) {
+            const sug = Math.round(reg * (today.hcPct / 100));
+            hcBox.innerHTML = `
+              <p class="text-fuchsia-400 font-semibold text-base mb-1">YES — HIGH CONVICTION</p>
+              <p class="text-xs text-slate-300 mb-2">${today.hcReason}</p>
+              <p class="text-xs text-slate-400 mb-1">Depth ${today.vsHighPct.toFixed(2)}% · Close at ${cp}% of day range · ${today.is5DayLow ? '5-day low · ' : ''}${today.consecDown || 0} down days</p>
+              <p class="text-sm">Suggested deploy: <b class="text-fuchsia-300">${today.hcPct}%</b> of planned cash
+                ${reg > 0 ? `(~₹${sug.toLocaleString('en-IN')} from Regular)` : ''}</p>
+              <p class="text-xs text-slate-500 mt-1">Available Regular+Dip: ₹${avail.toLocaleString('en-IN')}</p>
+              <button onclick="switchTab('deploy')" class="mt-2 text-xs bg-fuchsia-600 text-white px-3 py-1.5 rounded">Deploy now →</button>`;
+          } else {
+            hcBox.innerHTML = `
+              <p class="text-slate-300 font-medium mb-1">Not high conviction today</p>
+              <p class="text-xs text-slate-400">${today.hcReason || 'Need ≤ −5% vs high and close in bottom 35% of day'}</p>
+              <p class="text-xs text-slate-500 mt-1">Depth ${today.vsHighPct != null ? today.vsHighPct.toFixed(2) : '—'}% · Close pos ${cp}% of range (need ≤35%)</p>`;
+          }
+        }
+
+        // Scale-in plan
+        const scaleBox = document.getElementById('scale-in-plan');
+        if (scaleBox && today.scaleIn) {
+          scaleBox.innerHTML = today.scaleIn.map(s => `
+            <div class="flex justify-between items-center ${s.active ? 'text-green-300' : 'text-slate-500'}">
+              <span>${s.active ? '●' : '○'} ${s.level}</span>
+              <span class="text-xs">${s.action}${s.active ? ' ← now' : ''}</span>
+            </div>`).join('') +
+            `<p class="text-xs text-slate-500 mt-2">Current depth: ${today.vsHighPct.toFixed(2)}% vs high · RSI ${today.rsi14 != null ? today.rsi14.toFixed(1) : '—'}</p>`;
+        }
+
         // Historical triggers: BUY or STRONG BUY only, newest first
         const triggers = dayResults.filter(d => d.verdict === 'BUY' || d.verdict === 'STRONG BUY').reverse();
         const histBox = document.getElementById('signals-history');
@@ -1463,10 +1706,11 @@
               const ds = d.date ? d.date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
               const isToday = d.idx === closes.length - 1;
               const vc = d.verdict === 'STRONG BUY' ? 'text-green-400' : 'text-green-300';
-              return `<div class="flex justify-between items-center border-b border-slate-700/80 py-1.5 ${isToday ? 'bg-green-900/20 rounded px-1' : ''}">
+              const hc = d.highConviction ? '<span class="text-[10px] text-fuchsia-400 ml-1">HC</span>' : '';
+              return `<div class="flex justify-between items-center border-b border-slate-700/80 py-1.5 ${isToday ? 'bg-green-900/20 rounded px-1' : ''} ${d.highConviction ? 'border-l-2 border-fuchsia-500 pl-1' : ''}">
                 <div>
                   <span class="text-slate-300">${ds}</span>
-                  ${isToday ? '<span class="text-[10px] text-green-400 ml-1">TODAY</span>' : ''}
+                  ${isToday ? '<span class="text-[10px] text-green-400 ml-1">TODAY</span>' : ''}${hc}
                   <p class="text-xs text-slate-500">Close ${d.last.toFixed(0)} · RSI ${d.rsi14 != null ? d.rsi14.toFixed(0) : '—'} · vsHigh ${d.vsHighPct.toFixed(1)}%</p>
                 </div>
                 <div class="text-right">
