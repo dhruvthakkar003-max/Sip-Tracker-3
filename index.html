@@ -248,10 +248,24 @@
       </div>
 
       <div class="card p-4">
-        <h3 class="font-semibold mb-3">Manual Deploy from Reserve</h3>
+        <h3 class="font-semibold mb-3">Manual Deploy to Fund</h3>
         <div class="space-y-2">
-          <select id="deploy-fund-select" class="w-full rounded-lg px-3 py-2 text-sm"></select>
-          <input type="number" id="deploy-fund-amount" placeholder="Amount (₹)" class="w-full rounded-lg px-3 py-2 text-sm">
+          <select id="deploy-fund-select" class="w-full rounded-lg px-3 py-2 text-sm" onchange="onDeployFundChange()"></select>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-[10px] text-slate-400">Price / NAV (₹)</label>
+              <input type="number" id="deploy-fund-price" step="any" placeholder="Price" class="w-full rounded-lg px-3 py-2 text-sm" oninput="syncDeployFromPriceQty()">
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-400">Quantity (units)</label>
+              <input type="number" id="deploy-fund-qty" step="any" placeholder="Units" class="w-full rounded-lg px-3 py-2 text-sm" oninput="syncDeployFromPriceQty()">
+            </div>
+          </div>
+          <div>
+            <label class="text-[10px] text-slate-400">Amount (₹) — auto from price × qty, or type amount</label>
+            <input type="number" id="deploy-fund-amount" step="any" placeholder="Amount (₹)" class="w-full rounded-lg px-3 py-2 text-sm" oninput="syncDeployFromAmount()">
+          </div>
+          <p class="text-[10px] text-slate-500" id="deploy-units-hint">Select fund to load price. Enter price + qty or amount.</p>
           <button onclick="manualDeployToFund()" class="btn w-full bg-green-600 text-white py-2 rounded-lg">Allocate to Fund</button>
         </div>
       </div>
@@ -2168,43 +2182,91 @@
       toast(`Ready to deploy ₹${amt.toLocaleString('en-IN')}. Use “Allocate to Fund” below.`);
       document.getElementById('deploy-fund-amount').value = amt;
     }
+    function onDeployFundChange() {
+      const fundId = document.getElementById('deploy-fund-select').value;
+      const f = state.funds.find(x => x.id === fundId);
+      const priceEl = document.getElementById('deploy-fund-price');
+      const hint = document.getElementById('deploy-units-hint');
+      if (!f) return;
+      const px = f.lastNav || f.avgNav || 0;
+      if (priceEl && px) priceEl.value = px;
+      if (hint) {
+        hint.textContent = `Current holdings: ${(f.units || 0).toFixed(4)} units · Avg ₹${(f.avgNav || 0).toFixed(2)} · Live ₹${(f.lastNav || 0).toFixed(2)}`;
+      }
+      syncDeployFromPriceQty();
+    }
+
+    function syncDeployFromPriceQty() {
+      const price = parseFloat(document.getElementById('deploy-fund-price').value);
+      const qty = parseFloat(document.getElementById('deploy-fund-qty').value);
+      const amtEl = document.getElementById('deploy-fund-amount');
+      if (price > 0 && qty > 0 && amtEl) {
+        amtEl.value = (price * qty).toFixed(2);
+      }
+    }
+
+    function syncDeployFromAmount() {
+      const price = parseFloat(document.getElementById('deploy-fund-price').value);
+      const amt = parseFloat(document.getElementById('deploy-fund-amount').value);
+      const qtyEl = document.getElementById('deploy-fund-qty');
+      if (price > 0 && amt > 0 && qtyEl) {
+        qtyEl.value = (amt / price).toFixed(4);
+      }
+    }
+
     function manualDeployToFund() {
       const fundId = document.getElementById('deploy-fund-select').value;
-      const amt = parseFloat(document.getElementById('deploy-fund-amount').value);
-      if (!fundId || !amt || amt <= 0) return toast('Select fund & amount');
-      const avail = totalAvailable();
-      if (amt > avail + 0.01) return toast(`Insufficient cash. Available: ${fmt(avail)}`);
+      let price = parseFloat(document.getElementById('deploy-fund-price').value);
+      let qty = parseFloat(document.getElementById('deploy-fund-qty').value);
+      let amt = parseFloat(document.getElementById('deploy-fund-amount').value);
+      if (!fundId) return toast('Select a fund');
       const f = state.funds.find(x => x.id === fundId);
       if (!f) return;
-      const nav = f.lastNav || f.avgNav || 1;
-      const units = amt / nav;
+
+      // Resolve price / qty / amount together
+      if ((!price || price <= 0) && (f.lastNav || f.avgNav)) price = f.lastNav || f.avgNav;
+      if (qty > 0 && price > 0) amt = price * qty;
+      else if (amt > 0 && price > 0) qty = amt / price;
+      else if (amt > 0 && (!price || price <= 0)) {
+        price = f.lastNav || f.avgNav || 1;
+        qty = amt / price;
+      }
+      if (!amt || amt <= 0 || !qty || qty <= 0 || !price || price <= 0) {
+        return toast('Enter price + quantity, or amount');
+      }
+
+      const avail = totalAvailable();
+      if (amt > avail + 0.01) return toast(`Insufficient cash. Available: ${fmt(avail)}`);
+
       const prevCost = (f.avgNav || 0) * (f.units || 0);
-      f.units = (f.units || 0) + units;
-      f.avgNav = (prevCost + amt) / f.units;
-      // Draw from Dip Reserve first, then Regular
+      f.units = (f.units || 0) + qty;
+      f.avgNav = f.units ? (prevCost + amt) / f.units : price;
+      f.lastNav = price;
+
       let left = amt;
       const fromDip = Math.min(state.reserve || 0, left);
       state.reserve = (state.reserve || 0) - fromDip;
       left -= fromDip;
-      if (left > 0) {
-        state.regular = Math.max(0, (state.regular || 0) - left);
-      }
+      if (left > 0) state.regular = Math.max(0, (state.regular || 0) - left);
+
       state.transactions.push({
         id: 'tx' + Date.now() + '_dep',
         date: new Date().toISOString(),
         type: 'deploy',
         amount: amt,
         fundId: f.id,
-        note: `Deployed (Dip ₹${fromDip.toFixed(0)} + Regular ₹${(amt-fromDip).toFixed(0)}) @ ₹${nav.toFixed(2)}`
+        note: `Deployed ${qty.toFixed(4)} units @ ₹${price.toFixed(2)} (₹${amt.toFixed(0)}; Dip ₹${fromDip.toFixed(0)} + Regular ₹${(amt - fromDip).toFixed(0)})`
       });
       state.activity.unshift({
         date: new Date().toISOString(),
-        text: `Deployed ₹${amt.toLocaleString('en-IN')} → ${f.name}`
+        text: `Deployed ${qty.toFixed(3)} u @ ₹${price.toFixed(2)} → ${f.name} (₹${amt.toLocaleString('en-IN')})`
       });
       save();
       renderAll();
-      toast(`Deployed ₹${amt.toLocaleString('en-IN')} to ${f.name}`);
+      toast(`+${qty.toFixed(3)} units of ${f.name} @ ₹${price.toFixed(2)}`);
       document.getElementById('deploy-fund-amount').value = '';
+      document.getElementById('deploy-fund-qty').value = '';
+      onDeployFundChange();
     }
 
     // ========== RENDERERS ==========
@@ -2249,16 +2311,18 @@
       const allocBox = document.getElementById('dash-allocation');
       const totalVal = value || 1;
       allocBox.innerHTML = state.funds.map(f => {
-        const cur = (f.units || 0) * (f.lastNav || f.avgNav || 0);
+        const units = f.units || 0;
+        const cur = units * (f.lastNav || f.avgNav || 0);
         const pct = (cur / totalVal) * 100;
         return `<div>
-          <div class="flex justify-between text-sm mb-1">
+          <div class="flex justify-between text-sm mb-1 gap-2">
             <span class="truncate">${f.name}</span>
-            <span>${pct.toFixed(1)}% · ${fmt(cur)}</span>
+            <span class="shrink-0 text-xs">${pct.toFixed(1)}% · tgt ${f.alloc||0}%</span>
           </div>
+          <p class="text-[11px] text-slate-500 mb-0.5">Qty <b class="text-slate-300">${units.toFixed(4)}</b> u · ${fmt(cur)} · Avg ₹${(f.avgNav||0).toFixed(2)}</p>
           <div class="progress-bar"><div class="progress-fill" style="width:${Math.min(pct,100)}%"></div></div>
         </div>`;
-      }).join('') || '<p class="text-slate-500 text-sm">No funds yet</p>';
+      }).join('') || '<p class="text-slate-500 text-sm">No funds yet</p>';;
 
       // Activity
       const act = document.getElementById('dash-activity');
@@ -2404,7 +2468,14 @@
 
       // Select
       const sel = document.getElementById('deploy-fund-select');
-      sel.innerHTML = state.funds.map(f => `<option value="${f.id}">${f.name}</option>`).join('');
+      if (sel) {
+        const prev = sel.value;
+        sel.innerHTML = state.funds.map(f =>
+          `<option value="${f.id}">${f.name} · ${(f.units||0).toFixed(2)} u</option>`
+        ).join('');
+        if (prev && state.funds.some(f => f.id === prev)) sel.value = prev;
+        onDeployFundChange();
+      }
     }
 
     function renderInsights() {
@@ -2442,18 +2513,22 @@
       // Fund cards
       const box = document.getElementById('insights-funds');
       box.innerHTML = state.funds.map(f => {
-        const cost = (f.units || 0) * (f.avgNav || 0);
-        const cur = (f.units || 0) * (f.lastNav || f.avgNav || 0);
+        const units = f.units || 0;
+        const cost = units * (f.avgNav || 0);
+        const cur = units * (f.lastNav || f.avgNav || 0);
         const pnl = cur - cost;
         const pct = cost ? (pnl / cost) * 100 : 0;
-        return `<div class="flex justify-between items-center border-b border-slate-700 pb-2">
-          <div class="min-w-0">
-            <p class="text-sm truncate">${f.name}</p>
-            <p class="text-xs text-slate-400">Invested ${fmt(cost)} · Now ${fmt(cur)}</p>
-          </div>
-          <div class="text-right ${pct >= 0 ? 'positive' : 'negative'}">
-            <p class="font-medium">${fmtPct(pct)}</p>
-            <p class="text-xs">${fmt(pnl)}</p>
+        return `<div class="border-b border-slate-700 pb-2">
+          <div class="flex justify-between items-center">
+            <div class="min-w-0">
+              <p class="text-sm truncate">${f.name}</p>
+              <p class="text-xs text-slate-400">Qty <b class="text-slate-300">${units.toFixed(4)}</b> u · Avg ₹${(f.avgNav||0).toFixed(2)} · LTP ₹${(f.lastNav||0).toFixed(2)}</p>
+              <p class="text-xs text-slate-500">Invested ${fmt(cost)} · Now ${fmt(cur)} · Alloc ${f.alloc||0}%</p>
+            </div>
+            <div class="text-right ${pct >= 0 ? 'positive' : 'negative'}">
+              <p class="font-medium">${fmtPct(pct)}</p>
+              <p class="text-xs">${fmt(pnl)}</p>
+            </div>
           </div>
         </div>`;
       }).join('') || '<p class="text-slate-500">Add funds to see insights</p>';
