@@ -772,18 +772,45 @@
       return isNaN(d) ? null : d;
     }
 
-    // Highest NAV in the current calendar month from history array
+    // Highest NAV in the current calendar month from history array {date, nav}
     function computeMonthHigh(history, fallbackNav) {
       const now = new Date();
       const y = now.getFullYear(), m = now.getMonth();
       let high = 0;
       (history || []).forEach(h => {
         const d = parseNavDate(h.date);
-        if (d && d.getFullYear() === y && d.getMonth() === m) {
-          if (h.nav > high) high = h.nav;
+        if (!d) return;
+        if (d.getFullYear() === y && d.getMonth() === m) {
+          const v = parseFloat(h.nav);
+          if (!isNaN(v) && v > high) high = v;
         }
       });
       if (!high && fallbackNav) high = fallbackNav;
+      return high;
+    }
+
+    // Calendar-month high from parallel arrays (oldest→newest). Prefer highs when present.
+    function calendarMonthHigh(closes, highs, dates, fallback) {
+      const now = new Date();
+      const y = now.getFullYear(), m = now.getMonth();
+      let high = 0;
+      if (!closes || !closes.length) return fallback || 0;
+      for (let i = 0; i < closes.length; i++) {
+        let d = dates && dates[i] ? dates[i] : null;
+        if (d && !(d instanceof Date)) d = new Date(d);
+        if (!d || isNaN(d)) continue;
+        if (d.getFullYear() === y && d.getMonth() === m) {
+          const h = (highs && highs[i] != null) ? highs[i] : closes[i];
+          if (h != null && h > high) high = h;
+          if (closes[i] != null && closes[i] > high) high = closes[i];
+        }
+      }
+      // Fallback: if no points tagged this month, use max of last few sessions (should be rare)
+      if (!high) {
+        const slice = closes.slice(-Math.min(10, closes.length));
+        high = Math.max(...slice, fallback || 0);
+      }
+      if (fallback && fallback > high) high = fallback;
       return high;
     }
 
@@ -842,24 +869,31 @@
         );
         if (fund) {
           fund.lastNav = price;
-          // month high from recent closes
-          const now = new Date();
-          const y = now.getFullYear(), m = now.getMonth();
-          let monthHigh = price;
           const ts = result.timestamp || [];
-          if (q?.high && ts.length) {
-            for (let i = 0; i < ts.length; i++) {
-              const d = new Date(ts[i] * 1000);
-              if (d.getFullYear() === y && d.getMonth() === m && q.high[i] != null) {
-                if (q.high[i] > monthHigh) monthHigh = q.high[i];
-              }
-            }
+          const closesAll = [], highsAll = [], hist = [];
+          for (let i = 0; i < (q.close || []).length; i++) {
+            if (q.close[i] == null) continue;
+            const d = ts[i] ? new Date(ts[i] * 1000) : null;
+            closesAll.push(q.close[i]);
+            highsAll.push(q.high[i] ?? q.close[i]);
+            hist.push({
+              date: d ? `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}` : '',
+              nav: q.close[i],
+              high: q.high[i] ?? q.close[i]
+            });
           }
-          fund.monthHigh = Math.max(fund.monthHigh || 0, monthHigh, price);
-          fund.history = closes.slice(-30).map((c, i) => ({ date: String(i), nav: c }));
+          // True calendar-month high (aligned dates; do not keep prior-month stale highs)
+          const dateArr = [];
+          for (let i = 0; i < (q.close || []).length; i++) {
+            if (q.close[i] == null) continue;
+            dateArr.push(ts[i] ? new Date(ts[i] * 1000) : null);
+          }
+          const mh = calendarMonthHigh(closesAll, highsAll, dateArr, price);
+          fund.monthHigh = mh;
+          fund.history = hist.slice(-60);
           fund.lastNavDate = new Date().toLocaleDateString('en-IN');
           save();
-          if (!silent) toast(`${fund.name}: Market ₹${price.toFixed(2)}`);
+          if (!silent) toast(`${fund.name}: Market ₹${price.toFixed(2)} · Month High ₹${mh.toFixed(2)}`);
           renderFunds();
           renderDashboard();
           renderDeploy();
@@ -919,7 +953,13 @@
       const nav = parseFloat(val);
       if (!nav || isNaN(nav)) return toast('Invalid number');
       f.lastNav = nav;
-      if (!f.monthHigh || nav > f.monthHigh) f.monthHigh = nav;
+      if (f.history && f.history.length) {
+        f.history.unshift({ date: new Date().toLocaleDateString('en-GB').split('/').join('-'), nav });
+        f.monthHigh = computeMonthHigh(f.history, nav);
+      } else {
+        f.monthHigh = Math.max(f.monthHigh || 0, nav);
+      }
+      if (nav > (f.monthHigh || 0)) f.monthHigh = nav;
       f.lastNavDate = new Date().toLocaleDateString('en-IN');
       save();
       renderFunds();
@@ -1782,15 +1822,15 @@
     // ========== PER-FUND DIP SIGNALS ==========
     let lastFundSignals = null;
 
-    function scoreFundSeries(closes, highs, lows, thr, hasOHLC) {
-      // closes: oldest -> newest numbers
+    function scoreFundSeries(closes, highs, lows, thr, hasOHLC, dates) {
+      // closes: oldest -> newest numbers; dates optional Date[] aligned with closes
       if (!closes || closes.length < 15) return null;
       const last = closes[closes.length - 1];
       const prev = closes[closes.length - 2] || last;
       const changePct = prev ? ((last - prev) / prev) * 100 : 0;
-      const monthSlice = closes.slice(-22);
-      const monthHigh = Math.max(...monthSlice);
-      const vsHigh = ((last - monthHigh) / monthHigh) * 100;
+      // Calendar month high (same definition as Funds tab)
+      const monthHigh = calendarMonthHigh(closes, highs, dates, last);
+      const vsHigh = monthHigh ? ((last - monthHigh) / monthHigh) * 100 : 0;
       const rsi14 = rsi(closes, 14);
       let consec = 0;
       for (let i = closes.length - 1; i > 0; i--) {
@@ -1900,14 +1940,16 @@
           const result = json?.chart?.result?.[0];
           const q = result?.indicators?.quote?.[0];
           if (!q?.close) throw new Error('no data');
-          const closes = [], highs = [], lows = [];
+          const closes = [], highs = [], lows = [], dates = [];
+          const tsa = result.timestamp || [];
           for (let i = 0; i < q.close.length; i++) {
             if (q.close[i] == null) continue;
             closes.push(q.close[i]);
             highs.push(q.high[i] ?? q.close[i]);
             lows.push(q.low[i] ?? q.close[i]);
+            dates.push(tsa[i] ? new Date(tsa[i] * 1000) : null);
           }
-          if (closes.length >= 15) return { closes, highs, lows, hasOHLC: true, source: 'market' };
+          if (closes.length >= 15) return { closes, highs, lows, dates, hasOHLC: true, source: 'market' };
         } catch (e) { console.warn('ticker series', fund.ticker, e); }
       }
       if (fund.code) {
@@ -1917,22 +1959,32 @@
           if (!data?.data?.length) throw new Error('no nav');
           // mfapi returns newest first
           const rows = data.data.slice(0, 60).reverse();
-          const closes = rows.map(d => parseFloat(d.nav)).filter(n => !isNaN(n));
-          if (closes.length >= 15) return { closes, highs: null, lows: null, hasOHLC: false, source: 'nav' };
+          const closes = [], dates = [];
+          rows.forEach(d => {
+            const n = parseFloat(d.nav);
+            if (isNaN(n)) return;
+            closes.push(n);
+            dates.push(parseNavDate(d.date));
+          });
+          if (closes.length >= 15) return { closes, highs: null, lows: null, dates, hasOHLC: false, source: 'nav' };
         } catch (e) { console.warn('nav series', fund.code, e); }
       }
       // fallback: stored history
       if (fund.history && fund.history.length >= 15) {
-        const closes = fund.history.map(h => h.nav).filter(n => n != null).reverse();
-        // history may already be newest-first depending on storage
-        const seq = fund.history.map(h => h.nav).filter(n => n != null);
-        // ensure chronological: if first > last often newest first from mfapi storage
-        let c = seq.slice();
-        if (c.length >= 2 && fund.history[0].date && fund.history[fund.history.length-1].date) {
-          // keep as chronological ascending by reversing if needed - score only needs recent end
-          c = seq.slice().reverse();
-        }
-        if (c.length >= 15) return { closes: c, highs: null, lows: null, hasOHLC: false, source: 'cached' };
+        // history stored newest-first from mfapi, or chronological from Yahoo — normalize to oldest→newest
+        let rows = fund.history.slice();
+        const d0 = parseNavDate(rows[0].date), d1 = parseNavDate(rows[rows.length - 1].date);
+        if (d0 && d1 && d0 > d1) rows = rows.slice().reverse();
+        const closes = [], dates = [], highs = [];
+        let hasH = false;
+        rows.forEach(h => {
+          if (h.nav == null) return;
+          closes.push(h.nav);
+          dates.push(parseNavDate(h.date));
+          if (h.high != null) { highs.push(h.high); hasH = true; }
+          else highs.push(h.nav);
+        });
+        if (closes.length >= 15) return { closes, highs: hasH ? highs : null, lows: null, dates, hasOHLC: hasH, source: 'cached' };
       }
       return null;
     }
@@ -1954,16 +2006,14 @@
             results.push({ fund: f, error: 'No price history (set code or ticker)' });
             continue;
           }
-          const scored = scoreFundSeries(series.closes, series.highs, series.lows, thr, series.hasOHLC);
+          const scored = scoreFundSeries(series.closes, series.highs, series.lows, thr, series.hasOHLC, series.dates);
           if (!scored) {
             results.push({ fund: f, error: 'Not enough history' });
             continue;
           }
-          // Sync month high / last on fund for consistency
+          // Sync current + calendar month high (same value Funds tab should show)
           f.lastNav = scored.last;
-          if (!f.monthHigh || scored.monthHigh > f.monthHigh) f.monthHigh = scored.monthHigh;
-          // Also ensure monthHigh at least series max recent
-          f.monthHigh = Math.max(f.monthHigh || 0, scored.monthHigh);
+          f.monthHigh = scored.monthHigh;
           results.push({ fund: f, scored, source: series.source });
         } catch (e) {
           results.push({ fund: f, error: e.message || 'Failed' });
